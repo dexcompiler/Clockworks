@@ -1,0 +1,63 @@
+# Build results
+bin/
+obj/
+[Bb]uild/
+[Dd]ebug/
+[Rr]elease/
+[Aa]rtifacts/
+
+# .NET test results
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+
+# Rider / JetBrains
+.idea/
+*.sln.iml
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.rsuser
+*.VC.db
+*.VC.VC.opendb
+
+# Visual Studio Code
+.vscode/
+
+# OS / misc
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# BenchmarkDotNet
+BenchmarkDotNet.Artifacts/
+
+# dotnet tools
+.dotnet/
+
+# Coverage (coverlet)
+coverage/
+coverage.*
+
+# Generated documentation
+site/
+
+# Temp
+**/[Tt]mp/
+**/[Tt]emp/
+
+# Optional: lock files (uncomment if you don't want to commit them)
+# packages.lock.json

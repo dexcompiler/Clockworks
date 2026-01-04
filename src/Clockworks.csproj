@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!-- Performance optimizations -->
+    <TieredCompilation>true</TieredCompilation>
+    <TieredPGO>true</TieredPGO>
+
+    <!-- Package metadata -->
+    <PackageId>Clockworks</PackageId>
+    <AssemblyName>Clockworks</AssemblyName>
+    <RootNamespace>Clockworks</RootNamespace>
+    <Version>1.0.0</Version>
+    <Authors>Dexter Ajoku</Authors>
+    <Company>CloudyBox</Company>
+    <Description>Clockworks is a .NET library for deterministic, fully controllable time in distributed-system simulations and tests. It provides a simulated TimeProvider with deterministic timer scheduling, TimeProvider-driven timeouts, UUIDv7 generation, and Hybrid Logical Clock (HLC) utilities with lightweight instrumentation.</Description>
+    <PackageTags>clock;time;timeprovider;deterministic;simulation;testing;timers;timeouts;uuid;uuidv7;guid;hlc;hybrid-logical-clock;distributed-systems</PackageTags>
+
+    <RepositoryUrl>https://github.com/dexcompiler/Clockworks</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <!-- SourceLink / packing best practices -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <Deterministic>true</Deterministic>
+
+    <!-- Recommended when producing packages in CI; safe locally too -->
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="obj\**\*.cs" />
+    <EmbeddedResource Remove="obj\**\*" />
+    <None Remove="obj\**\*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>
