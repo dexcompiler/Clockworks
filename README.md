@@ -58,6 +58,71 @@ var factory = new UuidV7Factory(TimeProvider.System);
 var id = factory.NewGuid();
 ```
 
+## Demos
+
+### Console demos (`demo/Clockworks.Demo`)
+
+The `demo/Clockworks.Demo` project is a small CLI with multiple focused demos.
+
+List demos:
+
+```bash
+dotnet run --project demo/Clockworks.Demo -- list
+```
+
+Run a demo:
+
+```bash
+dotnet run --project demo/Clockworks.Demo -- uuidv7
+```
+
+Useful ones to try:
+
+```bash
+# UUIDv7 sortability and time decoding
+dotnet run --project demo/Clockworks.Demo -- uuidv7-sortability
+
+# Fast-forwardable timeouts driven by simulated time
+dotnet run --project demo/Clockworks.Demo -- timeouts
+
+# Simulated timers, periodic coalescing, and scheduler statistics
+dotnet run --project demo/Clockworks.Demo -- simulated-time
+
+# Propagating HLC across service boundaries (header format)
+dotnet run --project demo/Clockworks.Demo -- hlc-messaging
+
+# BeforeSend/BeforeReceive workflow with coordinator stats
+dotnet run --project demo/Clockworks.Demo -- hlc-coordinator
+```
+
+The `uuidv7` demo also has an optional benchmark mode:
+
+```bash
+dotnet run --project demo/Clockworks.Demo -- uuidv7 --bench
+```
+
+### ASP.NET Core integration demo (`demo/Clockworks.IntegrationDemo`)
+
+`demo/Clockworks.IntegrationDemo` is a minimal ASP.NET Core app that demonstrates a realistic integration:
+
+- SQLite-backed **outbox + inbox** (idempotency)
+- An in-memory queued "transport" to keep the demo simple
+- Clockworks **HLC propagation** (`HlcCoordinator` + `HlcMessageHeader`)
+- A deterministic simulation using `SimulatedTimeProvider`
+- Failure injection (drop/duplicate/reorder/delay)
+
+Run it:
+
+```bash
+dotnet run --project demo/Clockworks.IntegrationDemo
+```
+
+Then POST to `/simulate` (and watch the console trace):
+
+```bash
+curl -X POST http://localhost:5000/simulate
+```
+
 ## Package
 
 - Target framework: `net10.0`
