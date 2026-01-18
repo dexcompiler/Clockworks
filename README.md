@@ -120,7 +120,14 @@ dotnet run --project demo/Clockworks.IntegrationDemo
 Then POST to `/simulate` (and watch the console trace):
 
 ```bash
-curl -X POST http://localhost:5000/simulate
+# Default is simulated time mode
+curl -X POST "http://localhost:5000/simulate"
+
+# Run the same simulation under real wall clock time
+curl -X POST "http://localhost:5000/simulate?mode=System"
+
+# Tweak knobs
+curl -X POST "http://localhost:5000/simulate?mode=Simulated&orders=10&tickMs=5&maxSteps=20000"
 ```
 
 ## Package
