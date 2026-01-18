@@ -1,30 +1,50 @@
 using Clockworks.IntegrationDemo.Domain;
+using Clockworks.IntegrationDemo.Infrastructure;
 using Clockworks.IntegrationDemo.Simulation;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddEndpointsApiExplorer();
-// builder.Services.AddSwaggerGen();
-
 var app = builder.Build();
 
-// app.MapGet("/", () => Results.Redirect("/swagger"));
+app.MapGet("/", () => Results.Text("Clockworks.IntegrationDemo. POST /simulate to run the workflow simulation."));
 
 app.MapPost("/orders", (PlaceOrderRequest request) =>
 {
-    // This API stub exists to show where you'd accept requests.
-    // The full workflow is demonstrated via /simulate to keep the demo deterministic and self-contained.
     return Results.Ok(new
     {
         Received = request,
-        Hint = "Use POST /simulate to run the full outbox/inbox + HLC deterministic demo"
+        Hint = "Use POST /simulate to run the full outbox/inbox + HLC demo"
     });
 });
 
-app.MapPost("/simulate", async (CancellationToken ct) =>
+app.MapPost("/simulate", async (
+    string? mode,
+    int? orders,
+    int? maxSteps,
+    int? tickMs,
+    bool? inMemorySqlite,
+    string? sqliteFile,
+    CancellationToken ct) =>
 {
-    await SimulatedRunner.RunAsync(ct);
-    return Results.Ok(new { Status = "Simulation finished. Check console output." });
+    var timeMode = Enum.TryParse<TimeMode>(mode ?? string.Empty, ignoreCase: true, out var parsed)
+        ? parsed
+        : TimeMode.Simulated;
+
+    var options = new SimulationOptions(
+        TimeMode: timeMode,
+        Orders: Math.Clamp(orders ?? 3, 1, 100),
+        MaxSteps: Math.Clamp(maxSteps ?? 5_000, 100, 200_000),
+        TickMs: Math.Clamp(tickMs ?? 10, 1, 1_000),
+        UseInMemorySqlite: inMemorySqlite ?? true,
+        SqliteFile: sqliteFile);
+
+    await SimulatedRunner.RunAsync(options, ct);
+
+    return Results.Ok(new
+    {
+        Status = "Simulation finished. Check console output.",
+        Options = options
+    });
 });
 
 app.Run();
