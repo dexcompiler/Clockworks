@@ -121,60 +121,41 @@ public sealed class HlcStatisticsTests
     }
 
     [Fact]
-    public void ClockAdvances_edge_case_remote_greater_than_after()
+    public void ClockAdvances_increments_when_remote_way_ahead()
     {
-        // This test case exposes the bug in the current implementation
-        // If remote > local but physical time catches up and becomes the max,
-        // then after > remote, but the current buggy condition would still
-        // increment ClockAdvances because remote >= after is false, so it won't increment.
-        // 
-        // Actually, let me think about this differently...
-        // Current condition: after > before AND remote >= after
-        // This would be true when remote is much larger than both before and after
-        // But the correct condition should be: after == remote (meaning remote was adopted)
-        
+        // Test that ClockAdvances increments when remote timestamp is
+        // significantly ahead and forces clock to advance
         var tp = SimulatedTimeProvider.FromUnixMs(10_000);
         using var factory = new HlcGuidFactory(tp, nodeId: 1);
         var coordinator = new HlcCoordinator(factory);
 
         coordinator.Statistics.Reset();
 
-        // Let's say local is at 10_000, we receive remote at 12_000
-        // but remote is WAY ahead at 50_000
+        // Remote timestamp way ahead of local time should cause clock to advance
         coordinator.BeforeReceive(new HlcTimestamp(50_000));
 
-        // The clock advances to 50_000 (remote was the max and was adopted)
-        // Current condition: after.WallTimeMs (50_000) > before.WallTimeMs (10_000) ✓
-        //                    remote.WallTimeMs (50_000) >= after.WallTimeMs (50_000) ✓
-        // So it would increment - this is actually correct!
         Assert.Equal(1, coordinator.Statistics.ClockAdvances);
     }
 
     [Fact]
-    public void ClockAdvances_diagnostic_test()
+    public void ClockAdvances_does_not_increment_when_physical_time_advances_beyond_remote()
     {
-        // Let's trace through various scenarios to understand the current logic
+        // When physical time advances beyond both local and remote,
+        // the clock advances due to physical time, not the remote timestamp
         var tp = SimulatedTimeProvider.FromUnixMs(10_000);
         using var factory = new HlcGuidFactory(tp, nodeId: 1);
         var coordinator = new HlcCoordinator(factory);
 
-        // Scenario: Physical time advances beyond remote
-        // This should NOT count as clock advance due to remote
         coordinator.Statistics.Reset();
-        tp.SetUtcNow(DateTimeOffset.FromUnixTimeMilliseconds(20_000));
-        var before = coordinator.CurrentTimestamp;
-        coordinator.BeforeReceive(new HlcTimestamp(15_000));
-        var after = coordinator.CurrentTimestamp;
         
-        // In this case:
-        // before.WallTimeMs = ~10_000 (initial)
-        // remote.WallTimeMs = 15_000
-        // physical = 20_000
-        // maxTime = 20_000 (physical is max)
-        // after.WallTimeMs = 20_000
-        // 
-        // Current condition: (20_000 > 10_000) && (15_000 >= 20_000) = true && false = false
-        // So ClockAdvances would NOT increment - this is CORRECT!
+        // Advance physical time significantly
+        tp.SetUtcNow(DateTimeOffset.FromUnixTimeMilliseconds(20_000));
+        
+        // Receive remote timestamp that's ahead of initial local but behind physical
+        coordinator.BeforeReceive(new HlcTimestamp(15_000));
+        
+        // Clock advanced to physical time (20_000), not remote (15_000)
+        // ClockAdvances should NOT increment
         Assert.Equal(0, coordinator.Statistics.ClockAdvances);
     }
 
