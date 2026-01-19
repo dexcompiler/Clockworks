@@ -175,7 +175,6 @@ public sealed class HlcStatisticsTests
         Assert.Equal(1, coordinator.Statistics.ClockAdvances);
         
         // Now local is at 15_000. Generate many events to potentially overflow counter
-        // (MaxCounterValue = 0xFFF = 4095)
         for (int i = 0; i < 4100; i++)
         {
             coordinator.NewLocalEventGuid();

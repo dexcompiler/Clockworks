@@ -165,7 +165,7 @@ public sealed class HlcStatistics
         // Clock advances due to remote when:
         // 1. The remote timestamp was ahead of our local time before witnessing, AND
         // 2. The remote timestamp was adopted (became our new wall time after witnessing)
-        // This indicates the remote was the maximum and forced the clock to advance.
+        // This indicates the local clock moved forward by adopting the remote timestamp.
         if (remote.WallTimeMs > before.WallTimeMs && after.WallTimeMs == remote.WallTimeMs)
         {
             Interlocked.Increment(ref _clockAdvances);
