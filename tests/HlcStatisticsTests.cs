@@ -177,4 +177,41 @@ public sealed class HlcStatisticsTests
         // So ClockAdvances would NOT increment - this is CORRECT!
         Assert.Equal(0, coordinator.Statistics.ClockAdvances);
     }
+
+    [Fact]
+    public void ClockAdvances_does_not_increment_on_counter_overflow()
+    {
+        // Edge case: If the counter overflows when local time is already the max,
+        // the wall time would advance by 1ms but this is NOT due to the remote timestamp
+        var tp = SimulatedTimeProvider.FromUnixMs(10_000);
+        using var factory = new HlcGuidFactory(tp, nodeId: 1);
+        var coordinator = new HlcCoordinator(factory);
+
+        coordinator.Statistics.Reset();
+        
+        // First, advance local clock ahead of physical time
+        coordinator.BeforeReceive(new HlcTimestamp(15_000));
+        Assert.Equal(1, coordinator.Statistics.ClockAdvances);
+        
+        // Now local is at 15_000. Generate many events to potentially overflow counter
+        // (MaxCounterValue = 0xFFF = 4095)
+        for (int i = 0; i < 4100; i++)
+        {
+            coordinator.NewLocalEventGuid();
+        }
+        
+        coordinator.Statistics.Reset();
+        
+        // Now receive a remote timestamp that's behind local
+        // If counter overflows during Witness, wall time might advance but not due to remote
+        var beforeReceive = coordinator.CurrentTimestamp;
+        coordinator.BeforeReceive(new HlcTimestamp(14_000));
+        var afterReceive = coordinator.CurrentTimestamp;
+        
+        // Even if wall time advanced due to counter overflow, this should NOT
+        // count as a clock advance due to remote (remote was behind)
+        // Our condition: remote > before AND after == remote
+        // Here: 14_000 > before (false) so ClockAdvances should NOT increment
+        Assert.Equal(0, coordinator.Statistics.ClockAdvances);
+    }
 }
