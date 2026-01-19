@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/clockworks-display-resized.png" width="520" />
+  <img src="assets/clockworks-display-resized.png" width="650" />
 </p>
 
 
