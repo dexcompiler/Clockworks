@@ -1,4 +1,7 @@
-# Clockworks
+<p align="center">
+  <img src="assets/clockworks-display.png" width="650" />
+</p>
+
 
 Clockworks is a .NET library for deterministic, fully controllable time in distributed-system simulations and tests.
 It is built around `TimeProvider` so that *time becomes an injectable dependency* you can control (including timers/timeouts), while also providing time-ordered identifiers and causal timestamps.
