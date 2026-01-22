@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Clockworks.Distributed;
 
 /// <summary>
@@ -358,7 +360,10 @@ public readonly struct VectorClock : IEquatable<VectorClock>
         var parts = new string[_nodeIds.Length];
         for (var i = 0; i < _nodeIds.Length; i++)
         {
-            parts[i] = $"{_nodeIds[i]}:{_counters[i]}";
+            parts[i] = string.Concat(
+                _nodeIds[i].ToString(CultureInfo.InvariantCulture),
+                ":",
+                _counters[i].ToString(CultureInfo.InvariantCulture));
         }
         return string.Join(',', parts);
     }
@@ -382,8 +387,8 @@ public readonly struct VectorClock : IEquatable<VectorClock>
             if (parts.Length != 2)
                 throw new FormatException($"Invalid vector clock entry: {entry}");
 
-            var nodeId = ushort.Parse(parts[0]);
-            var counter = ulong.Parse(parts[1]);
+            var nodeId = ushort.Parse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture);
+            var counter = ulong.Parse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture);
             pairs.Add((nodeId, counter));
         }
 
