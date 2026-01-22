@@ -224,6 +224,19 @@ public sealed class VectorClockTests
     }
 
     [Fact]
+    public void BinarySerialization_WritesFourByteCount()
+    {
+        var vc = new VectorClock().Increment(7);
+        Span<byte> buffer = stackalloc byte[vc.GetBinarySize()];
+        vc.WriteTo(buffer);
+
+        Assert.Equal(0, buffer[0]);
+        Assert.Equal(0, buffer[1]);
+        Assert.Equal(0, buffer[2]);
+        Assert.Equal(1, buffer[3]);
+    }
+
+    [Fact]
     public void BinarySerialization_MultipleNodes_RoundTrips()
     {
         var vc = new VectorClock()
@@ -383,6 +396,18 @@ public sealed class VectorClockTests
     }
 
     [Fact]
+    public void BinarySerialization_CountTooLarge_Throws()
+    {
+        var buffer = new byte[4];
+        buffer[0] = 0x00;
+        buffer[1] = 0x01;
+        buffer[2] = 0x00;
+        buffer[3] = 0x01; // 65537 entries
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => VectorClock.ReadFrom(buffer));
+    }
+
+    [Fact]
     public void Equals_SameValues_ReturnsTrue()
     {
         var vc1 = new VectorClock().Increment(1).Increment(2);
@@ -415,11 +440,14 @@ public sealed class VectorClockTests
 
     private static byte[] BuildBinary(params (ushort nodeId, ulong counter)[] entries)
     {
-        var buffer = new byte[2 + (entries.Length * 10)];
-        buffer[0] = (byte)(entries.Length >> 8);
-        buffer[1] = (byte)entries.Length;
+        var buffer = new byte[4 + (entries.Length * 10)];
+        var count = (uint)entries.Length;
+        buffer[0] = (byte)(count >> 24);
+        buffer[1] = (byte)(count >> 16);
+        buffer[2] = (byte)(count >> 8);
+        buffer[3] = (byte)count;
 
-        var offset = 2;
+        var offset = 4;
         foreach (var entry in entries)
         {
             buffer[offset++] = (byte)(entry.nodeId >> 8);
