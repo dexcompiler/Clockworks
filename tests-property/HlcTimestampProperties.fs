@@ -1,8 +1,21 @@
 module Clockworks.PropertyTests.HlcTimestampProperties
 
 open Xunit
+open System
+open FsCheck.FSharp
 open FsCheck.Xunit
 open Clockworks.Distributed
+
+type HlcTimestampArb =
+    static member HlcTimestamp() : FsCheck.Arbitrary<HlcTimestamp> =
+        let maxWallTime = (1L <<< 48) - 1L
+        let wallTimeGen = Gen.choose64 (0L, maxWallTime)
+        let counterGen = Gen.choose (0, 0x0FFF) |> Gen.map uint16
+        let nodeIdGen = Gen.choose (0, 0x000F) |> Gen.map uint16
+
+        Gen.zip3 wallTimeGen counterGen nodeIdGen
+        |> Gen.map (fun (wallTimeMs, counter, nodeId) -> HlcTimestamp(wallTimeMs, counter, nodeId))
+        |> Arb.fromGen
 
 /// Property: Packing and unpacking a timestamp should be an identity operation
 [<Property>]
@@ -19,22 +32,22 @@ let ``ToPackedInt64 and FromPackedInt64 form a round-trip`` (wallTimeMs: int64) 
     unpacked = original
 
 /// Property: Comparison must be transitive: if a <= b and b <= c, then a <= c
-[<Property>]
+[<Property(Arbitrary = [| typeof<HlcTimestampArb> |])>]
 let ``HlcTimestamp comparison is transitive`` (a: HlcTimestamp) (b: HlcTimestamp) (c: HlcTimestamp) =
     not (a.CompareTo(b) <= 0 && b.CompareTo(c) <= 0) || (a.CompareTo(c) <= 0)
 
 /// Property: Comparison must be reflexive: a <= a
-[<Property>]
+[<Property(Arbitrary = [| typeof<HlcTimestampArb> |])>]
 let ``HlcTimestamp comparison is reflexive`` (ts: HlcTimestamp) =
     ts.CompareTo(ts) = 0 && ts = ts
 
 /// Property: Comparison must be antisymmetric: if a <= b and b <= a, then a = b
-[<Property>]
+[<Property(Arbitrary = [| typeof<HlcTimestampArb> |])>]
 let ``HlcTimestamp comparison is antisymmetric`` (a: HlcTimestamp) (b: HlcTimestamp) =
     not (a.CompareTo(b) <= 0 && b.CompareTo(a) <= 0) || (a = b)
 
 /// Property: Total ordering - for any two timestamps, one must be less than, equal to, or greater than the other
-[<Property>]
+[<Property(Arbitrary = [| typeof<HlcTimestampArb> |])>]
 let ``HlcTimestamp has total ordering`` (a: HlcTimestamp) (b: HlcTimestamp) =
     let cmp = a.CompareTo(b)
     (cmp < 0) || (cmp = 0) || (cmp > 0)
@@ -78,11 +91,11 @@ let ``For equal wall time and counter, higher nodeId means greater timestamp``
     )
 
 /// Property: Packed representation preserves ordering
-[<Property>]
+[<Property(Arbitrary = [| typeof<HlcTimestampArb> |])>]
 let ``Packed representation preserves ordering`` (a: HlcTimestamp) (b: HlcTimestamp) =
-    let packedA = a.ToPackedInt64()
-    let packedB = b.ToPackedInt64()
-    (a.CompareTo(b) < 0) = (packedA < packedB)
+    let packedA = uint64 (a.ToPackedInt64())
+    let packedB = uint64 (b.ToPackedInt64())
+    a.CompareTo(b) = compare packedA packedB
 
 /// Property: WriteTo and ReadFrom should round-trip (full 80-bit encoding)
 [<Property>]
