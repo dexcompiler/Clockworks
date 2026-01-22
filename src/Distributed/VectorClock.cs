@@ -326,7 +326,24 @@ public readonly struct VectorClock : IEquatable<VectorClock>
                           source[offset++];
         }
 
-        return new VectorClock(nodeIds, counters);
+        var isSortedUnique = true;
+        for (var i = 1; i < nodeIds.Length; i++)
+        {
+            if (nodeIds[i] <= nodeIds[i - 1])
+            {
+                isSortedUnique = false;
+                break;
+            }
+        }
+
+        if (isSortedUnique)
+            return new VectorClock(nodeIds, counters);
+
+        var pairs = new List<(ushort nodeId, ulong counter)>(nodeIds.Length);
+        for (var i = 0; i < nodeIds.Length; i++)
+            pairs.Add((nodeIds[i], counters[i]));
+
+        return CreateCanonical(pairs);
     }
 
     /// <summary>
@@ -370,18 +387,32 @@ public readonly struct VectorClock : IEquatable<VectorClock>
             pairs.Add((nodeId, counter));
         }
 
-        // Sort by node ID for canonical representation
+        return CreateCanonical(pairs);
+    }
+
+    private static VectorClock CreateCanonical(List<(ushort nodeId, ulong counter)> pairs)
+    {
+        if (pairs.Count == 0)
+            return new VectorClock();
+
         pairs.Sort((a, b) => a.nodeId.CompareTo(b.nodeId));
 
-        var nodeIds = new ushort[pairs.Count];
-        var counters = new ulong[pairs.Count];
-        for (var i = 0; i < pairs.Count; i++)
+        var nodeIds = new List<ushort>(pairs.Count);
+        var counters = new List<ulong>(pairs.Count);
+        foreach (var pair in pairs)
         {
-            nodeIds[i] = pairs[i].nodeId;
-            counters[i] = pairs[i].counter;
+            if (nodeIds.Count > 0 && nodeIds[^1] == pair.nodeId)
+            {
+                if (pair.counter > counters[^1])
+                    counters[^1] = pair.counter;
+                continue;
+            }
+
+            nodeIds.Add(pair.nodeId);
+            counters.Add(pair.counter);
         }
 
-        return new VectorClock(nodeIds, counters);
+        return new VectorClock(nodeIds.ToArray(), counters.ToArray());
     }
 
     /// <summary>
