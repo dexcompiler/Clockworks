@@ -240,6 +240,18 @@ public sealed class VectorClockMessageHeaderTests
     }
 
     [Fact]
+    public void EmptyClock_RoundTrip_Succeeds()
+    {
+        var header = new VectorClockMessageHeader(new VectorClock());
+        var str = header.ToString();
+        
+        Assert.True(VectorClockMessageHeader.TryParse(str, out var parsed));
+        Assert.Equal(header.Clock, parsed.Clock);
+        Assert.Equal(header.CorrelationId, parsed.CorrelationId);
+        Assert.Equal(header.CausationId, parsed.CausationId);
+    }
+
+    [Fact]
     public void TryParse_ValidString_ReturnsTrue()
     {
         var str = "1:2,2:1;aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -252,9 +264,17 @@ public sealed class VectorClockMessageHeaderTests
     }
 
     [Fact]
-    public void TryParse_EmptyString_ReturnsFalse()
+    public void TryParse_EmptyString_ReturnsTrue()
     {
-        Assert.False(VectorClockMessageHeader.TryParse("", out _));
+        Assert.True(VectorClockMessageHeader.TryParse("", out var result));
+        Assert.Equal(new VectorClock(), result.Clock);
+        Assert.Null(result.CorrelationId);
+        Assert.Null(result.CausationId);
+    }
+
+    [Fact]
+    public void TryParse_Null_ReturnsFalse()
+    {
         Assert.False(VectorClockMessageHeader.TryParse(null, out _));
     }
 

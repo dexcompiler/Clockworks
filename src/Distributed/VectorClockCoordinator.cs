@@ -241,9 +241,17 @@ public readonly record struct VectorClockMessageHeader
     /// </summary>
     public static bool TryParse(string? value, out VectorClockMessageHeader header)
     {
-        header = default;
-        if (string.IsNullOrEmpty(value))
+        if (value == null)
+        {
+            header = default;
             return false;
+        }
+
+        if (value == string.Empty)
+        {
+            header = new VectorClockMessageHeader(new VectorClock());
+            return true;
+        }
 
         try
         {
@@ -252,6 +260,7 @@ public readonly record struct VectorClockMessageHeader
         }
         catch
         {
+            header = default;
             return false;
         }
     }
