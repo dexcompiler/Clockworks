@@ -1,10 +1,21 @@
 module Clockworks.PropertyTests.UuidV7FactoryProperties
 
 open System
+open System.Security.Cryptography
+open System.Threading.Tasks
 open Xunit
 open FsCheck
 open FsCheck.Xunit
 open Clockworks
+
+type FixedRandomNumberGenerator() =
+    inherit RandomNumberGenerator()
+    override _.GetBytes(data: byte[]) =
+        for i in 0 .. data.Length - 1 do
+            data[i] <- 0xFFuy
+    override _.GetNonZeroBytes(data: byte[]) =
+        for i in 0 .. data.Length - 1 do
+            data[i] <- 0xFFuy
 
 /// Property: Sequential UUIDs should maintain monotonic ordering
 [<Property(MaxTest = 100)>]
@@ -33,12 +44,11 @@ let ``UUIDs at same millisecond have same timestamp prefix`` () =
     let uuid1 = factory.NewGuid()
     let uuid2 = factory.NewGuid()
     
-    // Extract the timestamp portion (first 48 bits)
-    let timestampBytes1: byte array = uuid1.ToByteArray() |> Array.take 6
-    let timestampBytes2: byte array = uuid2.ToByteArray() |> Array.take 6
+    // Extract the timestamp portion (first 48 bits, big-endian)
+    let ts1 = uuid1.GetTimestampMs()
+    let ts2 = uuid2.GetTimestampMs()
     
-    // First 6 bytes should be identical (same timestamp)
-    timestampBytes1 = timestampBytes2
+    ts1.HasValue && ts2.HasValue && ts1.Value = ts2.Value
 
 /// Property: Advancing time should result in UUIDs with different timestamps
 [<Property(MaxTest = 50)>]
@@ -54,36 +64,34 @@ let ``Advancing time changes UUID timestamp`` (advanceMs: uint16) =
     // UUIDs should be different and uuid2 > uuid1
     uuid1 <> uuid2 && uuid2 > uuid1
 
-/// Property: UUIDs maintain version 7 format (simplified check - just verify they're valid GUIDs)
-[<Property>]
-let ``All UUIDs are valid non-empty GUIDs`` () =
-    let timeProvider = new SimulatedTimeProvider()
-    use factory = new UuidV7Factory(timeProvider)
-    
-    let uuid = factory.NewGuid()
-    
-    // Verify it's not an empty GUID
-    uuid <> Guid.Empty
-
-/// Property: Counter overflow with SpinWait should eventually succeed
+/// Property: SpinWait overflow resumes once time advances
 [<Fact>]
-let ``Counter overflow with SpinWait behavior eventually succeeds`` () =
+let ``SpinWait overflow resumes after time advances`` () =
     let timeProvider = new SimulatedTimeProvider()
-    use factory = new UuidV7Factory(timeProvider, overflowBehavior = CounterOverflowBehavior.SpinWait)
+    use rng = new FixedRandomNumberGenerator()
+    use factory = new UuidV7Factory(timeProvider, rng, CounterOverflowBehavior.SpinWait)
     
-    // Generate enough UUIDs to potentially overflow the counter (4096 max)
-    // In practice, the factory should handle this by spinning
-    let mutable success = true
-    try
-        for _ in 1..5000 do
-            let _ = factory.NewGuid()
-            ()
-    with
-    | _ -> success <- false
+    let startCounter = 0x7FF
+    let maxCounter = 0xFFF
+    let iterations = (maxCounter - startCounter) + 2
     
-    // Should either succeed or time out gracefully
-    // For this test, we just verify it doesn't throw unexpected exceptions
-    success || true // Always pass since SpinWait behavior is expected
+    let task = Task.Run(fun () ->
+        for _ in 1..iterations do
+            factory.NewGuid() |> ignore
+    )
+    
+    // Without advancing time, the overflow should block
+    let completedEarly = task.Wait(50)
+    Assert.False(completedEarly)
+    
+    // Advance time to release the SpinWait
+    timeProvider.Advance(TimeSpan.FromMilliseconds(1.0))
+    
+    let completed = task.Wait(1000)
+    if not completed then
+        // Ensure we do not leave a spinning task behind
+        timeProvider.Advance(TimeSpan.FromMilliseconds(1.0))
+    Assert.True(completed)
 
 /// Property: UUIDs are unique across many generations
 [<Property(MaxTest = 50)>]

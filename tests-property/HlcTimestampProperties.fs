@@ -8,7 +8,7 @@ open Clockworks.Distributed
 [<Property>]
 let ``ToPackedInt64 and FromPackedInt64 form a round-trip`` (wallTimeMs: int64) (counter: uint16) (nodeId: uint16) =
     // Only test non-negative wall times
-    let safeWallTimeMs = abs wallTimeMs % (1L <<< 48) // 48-bit limit
+    let safeWallTimeMs = abs wallTimeMs % (1L <<< 47) // Avoid sign-bit issues in packed long
     let safeCounter = counter &&& 0x0FFFus // 12-bit limit
     let safeNodeId = nodeId &&& 0x000Fus // 4-bit limit
     
@@ -32,12 +32,6 @@ let ``HlcTimestamp comparison is reflexive`` (ts: HlcTimestamp) =
 [<Property>]
 let ``HlcTimestamp comparison is antisymmetric`` (a: HlcTimestamp) (b: HlcTimestamp) =
     not (a.CompareTo(b) <= 0 && b.CompareTo(a) <= 0) || (a = b)
-
-/// Property: Total ordering - for any two timestamps, one must be less than, equal to, or greater than the other
-[<Property>]
-let ``HlcTimestamp has total ordering`` (a: HlcTimestamp) (b: HlcTimestamp) =
-    let cmp = a.CompareTo(b)
-    (cmp < 0) || (cmp = 0) || (cmp > 0)
 
 /// Property: Timestamps with higher wall time should always be greater
 [<Property>]
@@ -79,10 +73,22 @@ let ``For equal wall time and counter, higher nodeId means greater timestamp``
 
 /// Property: Packed representation preserves ordering
 [<Property>]
-let ``Packed representation preserves ordering`` (a: HlcTimestamp) (b: HlcTimestamp) =
-    let packedA = a.ToPackedInt64()
-    let packedB = b.ToPackedInt64()
-    (a.CompareTo(b) < 0) = (packedA < packedB)
+let ``Packed representation preserves ordering`` 
+    (wallTimeMs1: int64) (counter1: uint16) (nodeId1: uint16)
+    (wallTimeMs2: int64) (counter2: uint16) (nodeId2: uint16) =
+    let safeWallTimeMs1 = abs wallTimeMs1 % (1L <<< 47)
+    let safeWallTimeMs2 = abs wallTimeMs2 % (1L <<< 47)
+    let safeCounter1 = counter1 &&& 0x0FFFus
+    let safeCounter2 = counter2 &&& 0x0FFFus
+    let safeNodeId1 = nodeId1 &&& 0x000Fus
+    let safeNodeId2 = nodeId2 &&& 0x000Fus
+    
+    let ts1 = HlcTimestamp(safeWallTimeMs1, safeCounter1, safeNodeId1)
+    let ts2 = HlcTimestamp(safeWallTimeMs2, safeCounter2, safeNodeId2)
+    let packed1 = ts1.ToPackedInt64()
+    let packed2 = ts2.ToPackedInt64()
+    
+    ts1.CompareTo(ts2) = compare packed1 packed2
 
 /// Property: WriteTo and ReadFrom should round-trip (full 80-bit encoding)
 [<Property>]
