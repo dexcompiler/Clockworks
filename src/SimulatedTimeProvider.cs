@@ -68,6 +68,30 @@ public sealed class SimulatedTimeProvider : TimeProvider
     public override TimeZoneInfo LocalTimeZone => _localTimeZone;
 
     /// <summary>
+    /// Gets the frequency of <see cref="GetTimestamp"/> in ticks per second.
+    /// </summary>
+    /// <remarks>
+    /// Returns <see cref="TimeSpan.TicksPerSecond"/> since scheduler time uses TimeSpan ticks.
+    /// </remarks>
+    public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+    /// <summary>
+    /// Gets the current high-frequency timestamp based on scheduler time.
+    /// </summary>
+    /// <remarks>
+    /// This returns the scheduler time in ticks, which only advances via <see cref="Advance"/>.
+    /// Unlike the base implementation which uses the system's high-frequency timer,
+    /// this provides deterministic, controllable timestamps for simulation.
+    /// </remarks>
+    public override long GetTimestamp()
+    {
+        lock (_gate)
+        {
+            return _schedulerTicks;
+        }
+    }
+
+    /// <summary>
     /// Gets the current wall-clock time without advancing scheduler time.
     /// </summary>
     public DateTimeOffset PeekUtcNow()
