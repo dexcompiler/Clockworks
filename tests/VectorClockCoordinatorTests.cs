@@ -163,6 +163,30 @@ public sealed class VectorClockCoordinatorTests
     }
 
     [Fact]
+    public async Task Statistics_Reset_IsThreadSafeWithConcurrentUpdates()
+    {
+        var coord = new VectorClockCoordinator(1);
+        var tasks = new List<Task>();
+
+        for (var i = 0; i < 100; i++)
+        {
+            tasks.Add(Task.Run(() => coord.BeforeSend()));
+            tasks.Add(Task.Run(() => coord.NewLocalEvent()));
+            tasks.Add(Task.Run(() => coord.BeforeReceive(new VectorClock().Increment(2))));
+            tasks.Add(Task.Run(() => coord.Statistics.Reset()));
+        }
+
+        await Task.WhenAll(tasks);
+
+        coord.Statistics.Reset();
+
+        Assert.Equal(0, coord.Statistics.LocalEventCount);
+        Assert.Equal(0, coord.Statistics.SendCount);
+        Assert.Equal(0, coord.Statistics.ReceiveCount);
+        Assert.Equal(0, coord.Statistics.ClockMerges);
+    }
+
+    [Fact]
     public async Task Coordinator_ThreadSafe_ConcurrentAccess()
     {
         var coord = new VectorClockCoordinator(1);
