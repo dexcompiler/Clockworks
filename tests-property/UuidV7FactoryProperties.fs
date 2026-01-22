@@ -99,21 +99,26 @@ let ``Counter overflow with SpinWait behavior eventually succeeds`` () =
                 gate.Wait()
                 factory.NewGuid())
 
-        // Ensure the task is waiting before releasing the gate.
-        ready.Wait()
-        gate.Set()
+        try
+            // Ensure the task is waiting before releasing the gate.
+            ready.Wait()
+            gate.Set()
 
-        // Advance simulated time while waiting, capped to avoid hanging forever.
-        let mutable waitIterations = 0
-        let maxWaitIterations = 10000
-        while not pending.IsCompleted && waitIterations < maxWaitIterations do
-            timeProvider.Advance(TimeSpan.FromMilliseconds(1.0))
-            waitIterations <- waitIterations + 1
+            // Advance simulated time while waiting, capped to avoid hanging forever.
+            let mutable waitIterations = 0
+            let maxWaitIterations = 10000
+            while not pending.IsCompleted && waitIterations < maxWaitIterations do
+                timeProvider.Advance(TimeSpan.FromMilliseconds(1.0))
+                waitIterations <- waitIterations + 1
 
-        // Wait for completion with a real-time timeout to prevent deadlock
-        let completed = pending.Wait(TimeSpan.FromSeconds(1.0))
-        if not completed then
-            success <- false
+            // Wait for completion with a real-time timeout to prevent deadlock
+            let completed = pending.Wait(TimeSpan.FromSeconds(1.0))
+            if not completed then
+                success <- false
+        finally
+            // Only dispose if the task is in a completion state
+            if pending.IsCompleted then
+                pending.Dispose()
     elif not reachedMax then
         success <- false
     
