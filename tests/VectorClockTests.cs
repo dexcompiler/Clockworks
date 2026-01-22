@@ -303,6 +303,17 @@ public sealed class VectorClockTests
     }
 
     [Fact]
+    public void StringSerialization_DuplicateNodes_TakesMaximum()
+    {
+        var str = "2:1,1:4,2:3,1:2";
+        var parsed = VectorClock.Parse(str);
+
+        Assert.Equal(4UL, parsed.Get(1));
+        Assert.Equal(3UL, parsed.Get(2));
+        Assert.Equal("1:4,2:3", parsed.ToString());
+    }
+
+    [Fact]
     public void TryParse_ValidString_ReturnsTrue()
     {
         Assert.True(VectorClock.TryParse("1:2,2:3", out var result));
@@ -329,6 +340,21 @@ public sealed class VectorClockTests
     {
         Assert.False(VectorClock.TryParse("invalid", out _));
         Assert.False(VectorClock.TryParse("1:2:3", out _));
+    }
+
+    [Fact]
+    public void BinarySerialization_UnsortedInput_Canonicalizes()
+    {
+        var buffer = BuildBinary(
+            (nodeId: 2, counter: 4UL),
+            (nodeId: 1, counter: 7UL),
+            (nodeId: 2, counter: 5UL));
+
+        var parsed = VectorClock.ReadFrom(buffer);
+
+        Assert.Equal(7UL, parsed.Get(1));
+        Assert.Equal(5UL, parsed.Get(2));
+        Assert.Equal("1:7,2:5", parsed.ToString());
     }
 
     [Fact]
@@ -360,5 +386,31 @@ public sealed class VectorClockTests
         var vc2 = new VectorClock().Increment(1).Increment(2);
 
         Assert.Equal(vc1.GetHashCode(), vc2.GetHashCode());
+    }
+
+    private static byte[] BuildBinary(params (ushort nodeId, ulong counter)[] entries)
+    {
+        var buffer = new byte[2 + (entries.Length * 10)];
+        buffer[0] = (byte)(entries.Length >> 8);
+        buffer[1] = (byte)entries.Length;
+
+        var offset = 2;
+        foreach (var entry in entries)
+        {
+            buffer[offset++] = (byte)(entry.nodeId >> 8);
+            buffer[offset++] = (byte)entry.nodeId;
+
+            var counter = entry.counter;
+            buffer[offset++] = (byte)(counter >> 56);
+            buffer[offset++] = (byte)(counter >> 48);
+            buffer[offset++] = (byte)(counter >> 40);
+            buffer[offset++] = (byte)(counter >> 32);
+            buffer[offset++] = (byte)(counter >> 24);
+            buffer[offset++] = (byte)(counter >> 16);
+            buffer[offset++] = (byte)(counter >> 8);
+            buffer[offset++] = (byte)counter;
+        }
+
+        return buffer;
     }
 }
