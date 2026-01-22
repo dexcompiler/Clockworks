@@ -51,6 +51,7 @@ public readonly struct VectorClock : IEquatable<VectorClock>
     // Sorted parallel arrays for sparse representation
     private readonly ushort[]? _nodeIds;
     private readonly ulong[]? _counters;
+    private const int MaxEntries = ushort.MaxValue + 1;
 
     /// <summary>
     /// Creates an empty vector clock.
@@ -243,24 +244,30 @@ public readonly struct VectorClock : IEquatable<VectorClock>
 
     /// <summary>
     /// Writes this vector clock to a binary representation.
-    /// Format: [count:ushort][nodeId:ushort,counter:ulong]*
+    /// Format: [count:uint][nodeId:ushort,counter:ulong]*
     /// </summary>
     public void WriteTo(Span<byte> destination)
     {
         var count = _nodeIds?.Length ?? 0;
-        var requiredSize = 2 + (count * 10); // 2 bytes for count + 10 bytes per entry
+        if (count > MaxEntries)
+            throw new InvalidOperationException($"Vector clock cannot contain more than {MaxEntries} entries.");
+
+        var requiredSize = checked(4 + (count * 10)); // 4 bytes for count + 10 bytes per entry
 
         if (destination.Length < requiredSize)
             throw new ArgumentException($"Destination must be at least {requiredSize} bytes", nameof(destination));
 
-        // Write count as big-endian ushort
-        destination[0] = (byte)(count >> 8);
-        destination[1] = (byte)count;
+        // Write count as big-endian uint
+        var countValue = (uint)count;
+        destination[0] = (byte)(countValue >> 24);
+        destination[1] = (byte)(countValue >> 16);
+        destination[2] = (byte)(countValue >> 8);
+        destination[3] = (byte)countValue;
 
         if (count == 0)
             return;
 
-        var offset = 2;
+        var offset = 4;
         for (var i = 0; i < count; i++)
         {
             var nodeId = _nodeIds![i];
@@ -288,7 +295,7 @@ public readonly struct VectorClock : IEquatable<VectorClock>
     public int GetBinarySize()
     {
         var count = _nodeIds?.Length ?? 0;
-        return 2 + (count * 10);
+        return checked(4 + (count * 10));
     }
 
     /// <summary>
@@ -296,23 +303,27 @@ public readonly struct VectorClock : IEquatable<VectorClock>
     /// </summary>
     public static VectorClock ReadFrom(ReadOnlySpan<byte> source)
     {
-        if (source.Length < 2)
-            throw new ArgumentException("Source must be at least 2 bytes", nameof(source));
+        if (source.Length < 4)
+            throw new ArgumentException("Source must be at least 4 bytes", nameof(source));
 
-        var count = (ushort)((source[0] << 8) | source[1]);
-        var requiredSize = 2 + (count * 10);
+        var count = (uint)((source[0] << 24) | (source[1] << 16) | (source[2] << 8) | source[3]);
+        if (count > MaxEntries)
+            throw new ArgumentOutOfRangeException(nameof(source), $"Vector clock entry count {count} exceeds max {MaxEntries}.");
+
+        var countValue = (int)count;
+        var requiredSize = checked(4 + (countValue * 10));
 
         if (source.Length < requiredSize)
             throw new ArgumentException($"Source must be at least {requiredSize} bytes for {count} entries", nameof(source));
 
-        if (count == 0)
+        if (countValue == 0)
             return new VectorClock();
 
-        var nodeIds = new ushort[count];
-        var counters = new ulong[count];
+        var nodeIds = new ushort[countValue];
+        var counters = new ulong[countValue];
 
-        var offset = 2;
-        for (var i = 0; i < count; i++)
+        var offset = 4;
+        for (var i = 0; i < countValue; i++)
         {
             // Read nodeId as big-endian ushort
             nodeIds[i] = (ushort)((source[offset++] << 8) | source[offset++]);
