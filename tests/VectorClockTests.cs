@@ -1,3 +1,4 @@
+using System.Globalization;
 using Xunit;
 using Clockworks.Distributed;
 
@@ -223,6 +224,19 @@ public sealed class VectorClockTests
     }
 
     [Fact]
+    public void BinarySerialization_WritesFourByteCount()
+    {
+        var vc = new VectorClock().Increment(7);
+        Span<byte> buffer = stackalloc byte[vc.GetBinarySize()];
+        vc.WriteTo(buffer);
+
+        Assert.Equal(0, buffer[0]);
+        Assert.Equal(0, buffer[1]);
+        Assert.Equal(0, buffer[2]);
+        Assert.Equal(1, buffer[3]);
+    }
+
+    [Fact]
     public void BinarySerialization_MultipleNodes_RoundTrips()
     {
         var vc = new VectorClock()
@@ -303,6 +317,41 @@ public sealed class VectorClockTests
     }
 
     [Fact]
+    public void StringSerialization_DuplicateNodes_TakesMaximum()
+    {
+        var str = "2:1,1:4,2:3,1:2";
+        var parsed = VectorClock.Parse(str);
+
+        Assert.Equal(4UL, parsed.Get(1));
+        Assert.Equal(3UL, parsed.Get(2));
+        Assert.Equal("1:4,2:3", parsed.ToString());
+    }
+
+    [Fact]
+    public void StringSerialization_UsesInvariantCulture()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CreateNativeDigitsCulture();
+            var vc = new VectorClock().Increment(1).Increment(2);
+
+            Assert.Equal("1:1,2:1", vc.ToString());
+
+            var nativeDigits = CultureInfo.CurrentCulture.NumberFormat.NativeDigits;
+            var nonAsciiInput = $"{nativeDigits[1]}:{nativeDigits[2]}";
+            Assert.False(VectorClock.TryParse(nonAsciiInput, out _));
+
+            Assert.True(VectorClock.TryParse("3:4", out var parsed));
+            Assert.Equal(4UL, parsed.Get(3));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [Fact]
     public void TryParse_ValidString_ReturnsTrue()
     {
         Assert.True(VectorClock.TryParse("1:2,2:3", out var result));
@@ -329,6 +378,33 @@ public sealed class VectorClockTests
     {
         Assert.False(VectorClock.TryParse("invalid", out _));
         Assert.False(VectorClock.TryParse("1:2:3", out _));
+    }
+
+    [Fact]
+    public void BinarySerialization_UnsortedInput_Canonicalizes()
+    {
+        var buffer = BuildBinary(
+            (nodeId: 2, counter: 4UL),
+            (nodeId: 1, counter: 7UL),
+            (nodeId: 2, counter: 5UL));
+
+        var parsed = VectorClock.ReadFrom(buffer);
+
+        Assert.Equal(7UL, parsed.Get(1));
+        Assert.Equal(5UL, parsed.Get(2));
+        Assert.Equal("1:7,2:5", parsed.ToString());
+    }
+
+    [Fact]
+    public void BinarySerialization_CountTooLarge_Throws()
+    {
+        var buffer = new byte[4];
+        buffer[0] = 0x00;
+        buffer[1] = 0x01;
+        buffer[2] = 0x00;
+        buffer[3] = 0x01; // 65537 entries
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => VectorClock.ReadFrom(buffer));
     }
 
     [Fact]
@@ -360,5 +436,54 @@ public sealed class VectorClockTests
         var vc2 = new VectorClock().Increment(1).Increment(2);
 
         Assert.Equal(vc1.GetHashCode(), vc2.GetHashCode());
+    }
+
+    private static byte[] BuildBinary(params (ushort nodeId, ulong counter)[] entries)
+    {
+        var buffer = new byte[4 + (entries.Length * 10)];
+        var count = (uint)entries.Length;
+        buffer[0] = (byte)(count >> 24);
+        buffer[1] = (byte)(count >> 16);
+        buffer[2] = (byte)(count >> 8);
+        buffer[3] = (byte)count;
+
+        var offset = 4;
+        foreach (var entry in entries)
+        {
+            buffer[offset++] = (byte)(entry.nodeId >> 8);
+            buffer[offset++] = (byte)entry.nodeId;
+
+            var counter = entry.counter;
+            buffer[offset++] = (byte)(counter >> 56);
+            buffer[offset++] = (byte)(counter >> 48);
+            buffer[offset++] = (byte)(counter >> 40);
+            buffer[offset++] = (byte)(counter >> 32);
+            buffer[offset++] = (byte)(counter >> 24);
+            buffer[offset++] = (byte)(counter >> 16);
+            buffer[offset++] = (byte)(counter >> 8);
+            buffer[offset++] = (byte)counter;
+        }
+
+        return buffer;
+    }
+
+    private static CultureInfo CreateNativeDigitsCulture()
+    {
+        var culture = (CultureInfo)CultureInfo.InvariantCulture.Clone();
+        culture.NumberFormat.NativeDigits =
+        [
+            "\u0660",
+            "\u0661",
+            "\u0662",
+            "\u0663",
+            "\u0664",
+            "\u0665",
+            "\u0666",
+            "\u0667",
+            "\u0668",
+            "\u0669"
+        ];
+        culture.NumberFormat.DigitSubstitution = DigitShapes.NativeNational;
+        return culture;
     }
 }

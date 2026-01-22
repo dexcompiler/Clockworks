@@ -155,10 +155,10 @@ public sealed class VectorClockStatistics
     /// </summary>
     public void Reset()
     {
-        _localEventCount = 0;
-        _sendCount = 0;
-        _receiveCount = 0;
-        _clockMerges = 0;
+        Interlocked.Exchange(ref _localEventCount, 0);
+        Interlocked.Exchange(ref _sendCount, 0);
+        Interlocked.Exchange(ref _receiveCount, 0);
+        Interlocked.Exchange(ref _clockMerges, 0);
     }
 
     /// <summary>
