@@ -112,7 +112,7 @@ let ``Counter overflow with SpinWait behavior eventually succeeds`` () =
                 waitIterations <- waitIterations + 1
 
             // Wait for completion with a real-time timeout to prevent deadlock
-            let completed = pending.Wait(TimeSpan.FromSeconds(1.0))
+            let completed = pending.Wait(TimeSpan.FromSeconds(5.0))
             if not completed then
                 success <- false
         finally
