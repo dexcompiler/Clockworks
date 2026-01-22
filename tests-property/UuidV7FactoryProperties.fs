@@ -91,25 +91,35 @@ let ``Counter overflow with SpinWait behavior eventually succeeds`` () =
     | _ -> success <- false
 
     if success && reachedMax then
-        let gate = new ManualResetEventSlim(false)
-        let pending =
-            Task.Factory.StartNew(
-                (fun () ->
-                    gate.Wait()
-                    factory.NewGuid()),
-                TaskCreationOptions.LongRunning)
+        use gate = new ManualResetEventSlim(false)
+        use ready = new ManualResetEventSlim(false)
+        use pending =
+            Task.Run(fun () ->
+                ready.Set()
+                gate.Wait()
+                factory.NewGuid())
 
+        // Ensure the task is waiting before releasing the gate.
+        ready.Wait()
         gate.Set()
-        while not pending.IsCompleted do
-            timeProvider.Advance(TimeSpan.FromMilliseconds(1.0))
 
-        pending.Wait()
+        // Advance simulated time while waiting, capped to avoid hanging forever.
+        let mutable waitIterations = 0
+        let maxWaitIterations = 10000
+        while not pending.IsCompleted && waitIterations < maxWaitIterations do
+            timeProvider.Advance(TimeSpan.FromMilliseconds(1.0))
+            waitIterations <- waitIterations + 1
+
+        if not pending.IsCompleted then
+            success <- false
+        else
+            pending.Wait()
     elif not reachedMax then
         success <- false
     
     // Should either succeed or time out gracefully
     // For this test, we just verify it doesn't throw unexpected exceptions
-    success || true // Always pass since SpinWait behavior is expected
+    success
 
 /// Property: UUIDs are unique across many generations
 [<Property(MaxTest = 50)>]
