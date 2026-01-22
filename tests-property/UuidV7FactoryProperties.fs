@@ -1,6 +1,8 @@
 module Clockworks.PropertyTests.UuidV7FactoryProperties
 
 open System
+open System.Threading
+open System.Threading.Tasks
 open Xunit
 open FsCheck
 open FsCheck.Xunit
@@ -74,12 +76,36 @@ let ``Counter overflow with SpinWait behavior eventually succeeds`` () =
     // Generate enough UUIDs to potentially overflow the counter (4096 max)
     // In practice, the factory should handle this by spinning
     let mutable success = true
+    let maxCounter = 0x0FFFus
+    let mutable reachedMax = false
+    let mutable attempts = 0
+
     try
-        for _ in 1..5000 do
-            let _ = factory.NewGuid()
-            ()
+        while not reachedMax && attempts < 5000 do
+            let guid = factory.NewGuid()
+            let counter = guid.GetCounter()
+            if counter.HasValue && counter.Value = maxCounter then
+                reachedMax <- true
+            attempts <- attempts + 1
     with
     | _ -> success <- false
+
+    if success && reachedMax then
+        let gate = new ManualResetEventSlim(false)
+        let pending =
+            Task.Factory.StartNew(
+                (fun () ->
+                    gate.Wait()
+                    factory.NewGuid()),
+                TaskCreationOptions.LongRunning)
+
+        gate.Set()
+        while not pending.IsCompleted do
+            timeProvider.Advance(TimeSpan.FromMilliseconds(1.0))
+
+        pending.Wait()
+    elif not reachedMax then
+        success <- false
     
     // Should either succeed or time out gracefully
     // For this test, we just verify it doesn't throw unexpected exceptions
