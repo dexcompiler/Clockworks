@@ -8,7 +8,7 @@ open Clockworks.Distributed
 
 type HlcTimestampArb =
     static member HlcTimestamp() : FsCheck.Arbitrary<HlcTimestamp> =
-        let maxWallTime = (1L <<< 47) - 1L
+        let maxWallTime = (1L <<< 48) - 1L
         let wallTimeGen = Gen.choose64 (0L, maxWallTime)
         let counterGen = Gen.choose (0, 0x0FFF) |> Gen.map uint16
         let nodeIdGen = Gen.choose (0, 0x000F) |> Gen.map uint16
@@ -93,9 +93,9 @@ let ``For equal wall time and counter, higher nodeId means greater timestamp``
 /// Property: Packed representation preserves ordering
 [<Property(Arbitrary = [| typeof<HlcTimestampArb> |])>]
 let ``Packed representation preserves ordering`` (a: HlcTimestamp) (b: HlcTimestamp) =
-    let packedA = a.ToPackedInt64()
-    let packedB = b.ToPackedInt64()
-    (a.CompareTo(b) < 0) = (packedA < packedB)
+    let packedA = uint64 (a.ToPackedInt64())
+    let packedB = uint64 (b.ToPackedInt64())
+    a.CompareTo(b) = compare packedA packedB
 
 /// Property: WriteTo and ReadFrom should round-trip (full 80-bit encoding)
 [<Property>]
