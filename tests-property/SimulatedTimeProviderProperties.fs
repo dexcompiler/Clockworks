@@ -16,9 +16,10 @@ let ``GetUtcNow and GetTimestamp are initially consistent`` (initialMs: int64) =
     let utcNow1 = timeProvider.GetUtcNow()
     let timestamp1 = timeProvider.GetTimestamp()
     let utcNow2 = timeProvider.GetUtcNow()
+    let timestamp2 = timeProvider.GetTimestamp()
     
     // Time should not advance without explicit calls
-    utcNow1 = utcNow2
+    utcNow1 = utcNow2 && timestamp1 = timestamp2
 
 /// Property: Advancing time should be atomic and deterministic
 [<Property>]
@@ -90,13 +91,13 @@ let ``Timer callbacks fire in order`` (delays: uint16 list) =
         let expectedOrder = 
             safeDelays
             |> List.mapi (fun idx delay -> (idx, delay))
-            |> List.sortBy snd
+            |> List.sortBy (fun (idx, delay) -> delay, idx)
             |> List.map fst
         
         let actualOrder = firedOrder |> List.rev
         
         // All timers should have fired
-        actualOrder.Length = safeDelays.Length
+        actualOrder.Length = safeDelays.Length && actualOrder = expectedOrder
 
 /// Property: Advance should set time relative to current time
 [<Property>]

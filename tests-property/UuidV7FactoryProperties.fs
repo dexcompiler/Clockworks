@@ -35,12 +35,11 @@ let ``UUIDs at same millisecond have same timestamp prefix`` () =
     let uuid1 = factory.NewGuid()
     let uuid2 = factory.NewGuid()
     
-    // Extract the timestamp portion (first 48 bits)
-    let timestampBytes1: byte array = uuid1.ToByteArray() |> Array.take 6
-    let timestampBytes2: byte array = uuid2.ToByteArray() |> Array.take 6
+    // Extract the timestamp portion (first 48 bits, big-endian)
+    let ts1 = uuid1.GetTimestampMs()
+    let ts2 = uuid2.GetTimestampMs()
     
-    // First 6 bytes should be identical (same timestamp)
-    timestampBytes1 = timestampBytes2
+    ts1.HasValue && ts2.HasValue && ts1.Value = ts2.Value
 
 /// Property: Advancing time should result in UUIDs with different timestamps
 [<Property(MaxTest = 50)>]
@@ -56,20 +55,9 @@ let ``Advancing time changes UUID timestamp`` (advanceMs: uint16) =
     // UUIDs should be different and uuid2 > uuid1
     uuid1 <> uuid2 && uuid2 > uuid1
 
-/// Property: UUIDs maintain version 7 format (simplified check - just verify they're valid GUIDs)
-[<Property>]
-let ``All UUIDs are valid non-empty GUIDs`` () =
-    let timeProvider = new SimulatedTimeProvider()
-    use factory = new UuidV7Factory(timeProvider)
-    
-    let uuid = factory.NewGuid()
-    
-    // Verify it's not an empty GUID
-    uuid <> Guid.Empty
-
-/// Property: Counter overflow with SpinWait should eventually succeed
+/// Property: SpinWait overflow resumes once time advances
 [<Fact>]
-let ``Counter overflow with SpinWait behavior eventually succeeds`` () =
+let ``SpinWait overflow resumes after time advances`` () =
     let timeProvider = new SimulatedTimeProvider()
     use factory = new UuidV7Factory(timeProvider, overflowBehavior = CounterOverflowBehavior.SpinWait)
     
