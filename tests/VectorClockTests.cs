@@ -1,3 +1,4 @@
+using System.Globalization;
 using Xunit;
 using Clockworks.Distributed;
 
@@ -314,6 +315,30 @@ public sealed class VectorClockTests
     }
 
     [Fact]
+    public void StringSerialization_UsesInvariantCulture()
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CreateNativeDigitsCulture();
+            var vc = new VectorClock().Increment(1).Increment(2);
+
+            Assert.Equal("1:1,2:1", vc.ToString());
+
+            var nativeDigits = CultureInfo.CurrentCulture.NumberFormat.NativeDigits;
+            var nonAsciiInput = $"{nativeDigits[1]}:{nativeDigits[2]}";
+            Assert.False(VectorClock.TryParse(nonAsciiInput, out _));
+
+            Assert.True(VectorClock.TryParse("3:4", out var parsed));
+            Assert.Equal(4UL, parsed.Get(3));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [Fact]
     public void TryParse_ValidString_ReturnsTrue()
     {
         Assert.True(VectorClock.TryParse("1:2,2:3", out var result));
@@ -412,5 +437,25 @@ public sealed class VectorClockTests
         }
 
         return buffer;
+    }
+
+    private static CultureInfo CreateNativeDigitsCulture()
+    {
+        var culture = (CultureInfo)CultureInfo.InvariantCulture.Clone();
+        culture.NumberFormat.NativeDigits =
+        [
+            "\u0660",
+            "\u0661",
+            "\u0662",
+            "\u0663",
+            "\u0664",
+            "\u0665",
+            "\u0666",
+            "\u0667",
+            "\u0668",
+            "\u0669"
+        ];
+        culture.NumberFormat.DigitSubstitution = DigitShapes.NativeNational;
+        return culture;
     }
 }
