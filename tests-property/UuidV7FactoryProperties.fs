@@ -93,7 +93,7 @@ let ``Counter overflow with SpinWait behavior eventually succeeds`` () =
     if success && reachedMax then
         use gate = new ManualResetEventSlim(false)
         use ready = new ManualResetEventSlim(false)
-        use pending =
+        let pending =
             Task.Run(fun () ->
                 ready.Set()
                 gate.Wait()
@@ -110,10 +110,10 @@ let ``Counter overflow with SpinWait behavior eventually succeeds`` () =
             timeProvider.Advance(TimeSpan.FromMilliseconds(1.0))
             waitIterations <- waitIterations + 1
 
-        if not pending.IsCompleted then
+        // Wait for completion with a real-time timeout to prevent deadlock
+        let completed = pending.Wait(TimeSpan.FromSeconds(1.0))
+        if not completed then
             success <- false
-        else
-            pending.Wait()
     elif not reachedMax then
         success <- false
     
