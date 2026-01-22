@@ -26,6 +26,12 @@ It is built around `TimeProvider` so that *time becomes an injectable dependency
   - HLC timestamps and utilities to preserve causality in distributed simulations
   - Helpers to witness remote timestamps and generate outbound timestamps
 
+- **Vector Clock**
+  - Full vector clock implementation for exact causality tracking and concurrency detection
+  - Performance-first sorted-array representation optimized for sparse clocks
+  - `VectorClockCoordinator` for thread-safe clock management across distributed nodes
+  - Message header propagation for HTTP/gRPC integration
+
 - **Lightweight instrumentation**
   - Counters for timers, advances, and timeouts useful in simulation/test assertions
 
@@ -59,6 +65,80 @@ tp.Advance(TimeSpan.FromSeconds(5));
 ```csharp
 var factory = new UuidV7Factory(TimeProvider.System);
 var id = factory.NewGuid();
+```
+
+### Vector Clock usage
+
+```csharp
+// Create coordinators for two nodes
+var nodeA = new VectorClockCoordinator(nodeId: 1);
+var nodeB = new VectorClockCoordinator(nodeId: 2);
+
+// Node A sends a message
+var clockA = nodeA.BeforeSend();
+
+// Node B receives the message
+nodeB.BeforeReceive(clockA);
+
+// Node B sends a reply
+var clockB = nodeB.BeforeSend();
+
+// Verify causality
+Console.WriteLine(clockA.HappensBefore(clockB)); // true
+
+// Propagate via HTTP headers
+var header = new VectorClockMessageHeader(
+    clock: clockA,
+    correlationId: Guid.NewGuid()
+);
+var headerString = header.ToString(); // "1:1"
+```
+
+## Distributed Systems Support
+
+### Hybrid Logical Clock (HLC)
+
+HLC provides **bounded** causality tracking that stays close to physical time. Best for:
+- Systems where wall-clock time matters (e.g., trading systems with time-based SLAs)
+- High-throughput systems where O(1) overhead is critical
+- Scenarios where approximate causality is sufficient
+
+**Trade-offs:**
+- ✅ O(1) space and time complexity
+- ✅ Stays close to physical time
+- ❌ Cannot detect concurrency (only ordering)
+- ❌ Requires synchronized physical clocks for best results
+
+### Vector Clock
+
+Vector clocks provide **exact** causality tracking and concurrency detection. Best for:
+- Systems requiring precise happens-before relationships
+- Conflict detection in replicated data stores
+- Debugging distributed race conditions
+- Academic/research scenarios
+
+**Trade-offs:**
+- ✅ Exact causality tracking
+- ✅ Detects concurrent events (neither happened-before the other)
+- ✅ No dependency on physical time
+- ❌ O(n) space per clock (where n = number of nodes)
+- ❌ O(n) time for merge and compare operations
+- ❌ Metadata grows with cluster size
+
+**Example: Detecting concurrency**
+
+```csharp
+var coordA = new VectorClockCoordinator(1);
+var coordB = new VectorClockCoordinator(2);
+
+// Two nodes generate events independently (no message passing)
+var clockA = coordA.BeforeSend();
+var clockB = coordB.BeforeSend();
+
+// Vector clocks detect they are concurrent
+Console.WriteLine(clockA.IsConcurrentWith(clockB)); // true
+
+// HLC would show one as "less than" the other based on physical time
 ```
 
 ## Demos

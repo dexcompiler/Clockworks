@@ -163,7 +163,7 @@ public sealed class VectorClockCoordinatorTests
     }
 
     [Fact]
-    public void Coordinator_ThreadSafe_ConcurrentAccess()
+    public async Task Coordinator_ThreadSafe_ConcurrentAccess()
     {
         var coord = new VectorClockCoordinator(1);
         var tasks = new List<Task>();
@@ -175,7 +175,7 @@ public sealed class VectorClockCoordinatorTests
             tasks.Add(Task.Run(() => coord.BeforeReceive(new VectorClock().Increment(2))));
         }
 
-        Task.WaitAll(tasks.ToArray());
+        await Task.WhenAll(tasks);
 
         // Should have incremented 300 times (100 sends, 100 local events, 100 receives)
         Assert.Equal(300UL, coord.Current.Get(1));
