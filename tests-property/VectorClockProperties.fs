@@ -1,11 +1,12 @@
 module Clockworks.PropertyTests.VectorClockProperties
 
-open FsCheck
+open System
+open FsCheck.FSharp
 open FsCheck.Xunit
 open Clockworks.Distributed
 
 type VectorClockArb =
-    static member VectorClock() : Arbitrary<VectorClock> =
+    static member VectorClock() : FsCheck.Arbitrary<VectorClock> =
         let nodeIdGen = Gen.choose (0, 50) |> Gen.map uint16
         let counterGen = Gen.choose (0, 1000) |> Gen.map uint64
         let pairGen = Gen.zip nodeIdGen counterGen
@@ -60,8 +61,8 @@ let ``Parse and ToString round-trip`` (clock: VectorClock) =
 [<Property(Arbitrary = [| typeof<VectorClockArb> |])>]
 let ``WriteTo and ReadFrom round-trip`` (clock: VectorClock) =
     let buffer = Array.zeroCreate<byte> (clock.GetBinarySize())
-    clock.WriteTo(buffer.AsSpan())
-    VectorClock.ReadFrom(buffer.AsSpan()) = clock
+    clock.WriteTo(System.Span<byte>(buffer))
+    VectorClock.ReadFrom(System.ReadOnlySpan<byte>(buffer)) = clock
 
 /// Property: Increment should advance the clock for that node
 [<Property(Arbitrary = [| typeof<VectorClockArb> |])>]
