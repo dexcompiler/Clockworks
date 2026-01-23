@@ -19,6 +19,9 @@ tests-property/
 ├── HlcTimestampProperties.fs          # Properties for Hybrid Logical Clock timestamps
 ├── UuidV7FactoryProperties.fs         # Properties for UUIDv7 generation
 ├── SimulatedTimeProviderProperties.fs # Properties for deterministic time simulation
+├── VectorClockProperties.fs           # Properties for Vector Clock ordering/merging
+├── TimeoutsProperties.fs              # Properties for Timeouts cancellation behavior
+├── PROPERTY_TESTING_PLAN.md           # Implementation plan and summary
 └── README.md                          # This file
 ```
 
@@ -56,7 +59,6 @@ Tests for the Hybrid Logical Clock timestamp implementation, verifying causality
 - ✅ **Comparison transitivity**: If a ≤ b and b ≤ c, then a ≤ c
 - ✅ **Comparison reflexivity**: Every timestamp equals itself  
 - ✅ **Comparison antisymmetry**: If a ≤ b and b ≤ a, then a = b
-- ✅ **Total ordering**: Any two timestamps can be compared
 - ✅ **Wall time ordering**: Higher wall time means later timestamp
 - ✅ **Counter ordering**: For same wall time, higher counter means later
 - ✅ **NodeId ordering**: For same wall time and counter, higher nodeId means later
@@ -76,10 +78,9 @@ Tests for RFC 9562 UUIDv7 generation with monotonicity guarantees and time-based
 - ✅ **Sequential monotonicity**: UUIDs generated sequentially are monotonically increasing
 - ✅ **Timestamp prefix consistency**: UUIDs at same millisecond share timestamp prefix
 - ✅ **Time advancement**: Advancing time results in different timestamps
-- ✅ **Version and variant**: All UUIDs have version 7 and RFC 4122 variant bits
-- ✅ **Counter overflow handling**: SpinWait behavior handles counter overflow gracefully
+- ✅ **Counter overflow handling**: SpinWait behavior resumes after time advances
 - ✅ **UUID uniqueness**: Generated UUIDs are unique across many generations
-- ✅ **Timestamp extraction**: Extracted timestamp matches creation time
+- ✅ **UUIDs change with time**: UUIDs differ when time advances
 - ✅ **Concurrent uniqueness**: Parallel generation produces unique UUIDs
 
 **Invariants:**
@@ -106,6 +107,35 @@ Tests for deterministic time simulation ensuring reproducible test behavior.
 - Time is fully deterministic and controllable
 - Timers fire in predictable order based on scheduled times
 - No hidden time advancement
+
+### 4. VectorClock Properties (`VectorClockProperties.fs`)
+
+Tests for the Vector Clock implementation, verifying merge algebra and serialization round-trips.
+
+**Properties Tested:**
+- ✅ **Merge commutativity**: `Merge(a, b) = Merge(b, a)`
+- ✅ **Merge associativity**: `Merge(Merge(a, b), c) = Merge(a, Merge(b, c))`
+- ✅ **Merge idempotence**: `Merge(a, a) = a`
+- ✅ **Merge dominance**: Merged clock is ≥ each input
+- ✅ **Parse/ToString round-trip**: `Parse(ToString(v)) = v`
+- ✅ **Binary round-trip**: `ReadFrom(WriteTo(v)) = v`
+- ✅ **Increment advancement**: `Increment(node)` moves clock forward
+
+**Invariants:**
+- Merge yields the least upper bound of two clocks
+- Serialization formats preserve ordering and identity
+
+### 5. Timeouts Properties (`TimeoutsProperties.fs`)
+
+Tests for `Timeouts` cancellation semantics driven by a `TimeProvider`.
+
+**Properties Tested:**
+- ✅ **Cancellation timing**: Positive timeouts cancel only after due time
+- ✅ **Immediate cancellation**: Non-positive timeouts cancel immediately
+
+**Invariants:**
+- Cancellation is driven by the provided time source
+- Non-positive durations are treated as already expired
 
 ## Writing New Property Tests
 
@@ -214,9 +244,8 @@ When testing concurrent code or using `TimeProvider.System`:
 
 ## Future Work
 
-- [ ] Add custom generator for `HlcTimestamp` C# record struct
 - [ ] Add properties for `HlcCoordinator` message passing
-- [ ] Add properties for `Timeouts` cancellation token behavior
+- [ ] Add properties for `VectorClockCoordinator` message flow
 - [ ] Performance properties (e.g., "UUID generation completes within X ms")
 - [ ] Stateful property testing for concurrent scenarios
 
