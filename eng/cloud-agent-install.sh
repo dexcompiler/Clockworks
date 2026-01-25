@@ -25,8 +25,15 @@ export DOTNET_ROOT="${DOTNET_ROOT:-/usr/share/dotnet}"
 export PATH="${PATH:+$PATH:}$HOME/.dotnet/tools"
 EOF
 
+# Ensure the file is readable before sourcing it
+sudo chmod 644 /etc/profile.d/dotnet-cloud-agent.sh
+
 # Apply vars for this script run too
-source /etc/profile.d/dotnet-cloud-agent.sh
+if [[ -r /etc/profile.d/dotnet-cloud-agent.sh ]]; then
+  source /etc/profile.d/dotnet-cloud-agent.sh
+else
+  echo "[install] Warning: cannot read /etc/profile.d/dotnet-cloud-agent.sh"
+fi
 
 # ---- Verify SDK is present & show info (fail fast if not) ----
 dotnet --version
