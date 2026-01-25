@@ -17,7 +17,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Clockworks.Demo", "demo\Clo
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Clockworks.IntegrationDemo", "demo\Clockworks.IntegrationDemo\Clockworks.IntegrationDemo.csproj", "{52933331-D795-3531-B002-E418C8C4A7EE}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Clockworks.PropertyTests", "tests-property\Clockworks.PropertyTests.fsproj", "{6C4D2BF7-4C26-4841-A4A7-D8EFE63894E3}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Clockworks.PropertyTests", "property-tests\Clockworks.PropertyTests.fsproj", "{6C4D2BF7-4C26-4841-A4A7-D8EFE63894E3}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
