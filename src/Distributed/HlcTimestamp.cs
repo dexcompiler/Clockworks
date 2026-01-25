@@ -15,7 +15,7 @@
 /// The counter c provides ordering within the same logical millisecond,
 /// giving us O(1) comparison with bounded drift from physical time.
 /// </remarks>
-public readonly record struct HlcTimestamp : IComparable<HlcTimestamp>
+public readonly record struct HlcTimestamp : IComparable<HlcTimestamp>, IComparable
 {
     /// <summary>
     /// Logical wall time in milliseconds since Unix epoch.
@@ -124,6 +124,16 @@ public readonly record struct HlcTimestamp : IComparable<HlcTimestamp>
         if (cmp != 0) return cmp;
 
         return NodeId.CompareTo(other.NodeId);
+    }
+
+    /// <summary>
+    /// Compares this timestamp to another object.
+    /// </summary>
+    public int CompareTo(object? obj)
+    {
+        if (obj is null) return 1;
+        if (obj is HlcTimestamp other) return CompareTo(other);
+        throw new ArgumentException("Object must be of type HlcTimestamp", nameof(obj));
     }
 
     /// <summary>

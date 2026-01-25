@@ -17,6 +17,7 @@ Property-based testing complements traditional example-based unit tests by:
 tests-property/
 ├── Clockworks.PropertyTests.fsproj    # F# test project with FsCheck.Xunit.v3
 ├── HlcTimestampProperties.fs          # Properties for Hybrid Logical Clock timestamps
+├── HlcCoordinatorProperties.fs        # Properties for HLC message coordination
 ├── UuidV7FactoryProperties.fs         # Properties for UUIDv7 generation
 ├── SimulatedTimeProviderProperties.fs # Properties for deterministic time simulation
 ├── VectorClockProperties.fs           # Properties for Vector Clock ordering/merging
@@ -70,7 +71,23 @@ Tests for the Hybrid Logical Clock timestamp implementation, verifying causality
 - Multiple encoding formats (64-bit packed, 80-bit full) preserve ordering
 - Causality is maintained through the (wallTime, counter, nodeId) tuple
 
-### 2. UuidV7Factory Properties (`UuidV7FactoryProperties.fs`)
+### 2. HlcCoordinator Properties (`HlcCoordinatorProperties.fs`)
+
+Tests for HLC message coordination, ensuring causality and counter behavior.
+
+**Properties Tested:**
+- ✅ **Send monotonicity**: Sequential sends produce increasing timestamps
+- ✅ **Receive advances local**: Any receive advances the local timestamp
+- ✅ **Remote adoption**: Remote-ahead wall time is adopted with counter = 1
+- ✅ **Causal chain**: Receive then send yields a later timestamp than the remote
+- ✅ **Counter reset**: Physical time jumps reset the counter to zero on send
+
+**Invariants:**
+- Local timestamps always move forward on send/receive
+- Remote-ahead timestamps are adopted deterministically
+- Physical time bounds reset logical counters
+
+### 3. UuidV7Factory Properties (`UuidV7FactoryProperties.fs`)
 
 Tests for RFC 9562 UUIDv7 generation with monotonicity guarantees and time-based ordering.
 
@@ -88,7 +105,7 @@ Tests for RFC 9562 UUIDv7 generation with monotonicity guarantees and time-based
 - Sub-millisecond ordering via 12-bit counter
 - Lock-free generation is thread-safe
 
-### 3. SimulatedTimeProvider Properties (`SimulatedTimeProviderProperties.fs`)
+### 4. SimulatedTimeProvider Properties (`SimulatedTimeProviderProperties.fs`)
 
 Tests for deterministic time simulation ensuring reproducible test behavior.
 
@@ -108,7 +125,7 @@ Tests for deterministic time simulation ensuring reproducible test behavior.
 - Timers fire in predictable order based on scheduled times
 - No hidden time advancement
 
-### 4. VectorClock Properties (`VectorClockProperties.fs`)
+### 5. VectorClock Properties (`VectorClockProperties.fs`)
 
 Tests for the Vector Clock implementation, verifying merge algebra and serialization round-trips.
 
@@ -125,7 +142,7 @@ Tests for the Vector Clock implementation, verifying merge algebra and serializa
 - Merge yields the least upper bound of two clocks
 - Serialization formats preserve ordering and identity
 
-### 5. Timeouts Properties (`TimeoutsProperties.fs`)
+### 6. Timeouts Properties (`TimeoutsProperties.fs`)
 
 Tests for `Timeouts` cancellation semantics driven by a `TimeProvider`.
 
@@ -244,7 +261,6 @@ When testing concurrent code or using `TimeProvider.System`:
 
 ## Future Work
 
-- [ ] Add properties for `HlcCoordinator` message passing
 - [ ] Add properties for `VectorClockCoordinator` message flow
 - [ ] Performance properties (e.g., "UUID generation completes within X ms")
 - [ ] Stateful property testing for concurrent scenarios
