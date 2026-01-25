@@ -22,7 +22,7 @@ export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
 export NUGET_PACKAGES="$HOME/.nuget/packages"
 
 export DOTNET_ROOT="${DOTNET_ROOT:-/usr/share/dotnet}"
-export PATH="$PATH:$HOME/.dotnet/tools"
+export PATH="${PATH:+$PATH:}$HOME/.dotnet/tools"
 EOF
 
 # Apply vars for this script run too
