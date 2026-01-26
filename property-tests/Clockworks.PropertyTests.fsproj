@@ -12,6 +12,7 @@
     <Compile Include="UuidV7FactoryProperties.fs" />
     <Compile Include="SimulatedTimeProviderProperties.fs" />
     <Compile Include="VectorClockProperties.fs" />
+    <Compile Include="VectorClockCoordinatorProperties.fs" />
     <Compile Include="TimeoutsProperties.fs" />
   </ItemGroup>
 
