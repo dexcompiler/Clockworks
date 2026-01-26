@@ -175,7 +175,6 @@ public sealed class SimulatedTimeProvider : TimeProvider
                 else
                 {
                     timer.MarkDisposed();
-                    Statistics.RecordTimerDisposed();
                 }
             }
         }
