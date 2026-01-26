@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document outlines the planning, implementation, and identification of property-based testing opportunities for the Clockworks library. We have successfully created an F# property test project using FsCheck that tests the core features of Clockworks through 43 property tests.
+This document outlines the planning, implementation, and identification of property-based testing opportunities for the Clockworks library. We have successfully created an F# property test project using FsCheck that tests the core features of Clockworks through 51 property tests.
 
 ## Project Background
 
@@ -130,6 +130,23 @@ This document outlines the planning, implementation, and identification of prope
 
 **Test Coverage:** 4 properties
 
+#### 8. **Instrumentation/Statistics** ⭐
+**Why Property Testing?**
+- Counters must match observed events for diagnostics to be trusted
+- Statistics are updated concurrently and must stay monotonic
+
+**Properties Tested:**
+- Advance call/tick totals match inputs
+- Timer creation updates queue counts
+- Timer change operations are recorded
+- One-shot timers record fired/disposed counts
+- Periodic timers record reschedules
+- Timeout statistics update after positive timeouts
+- Non-positive timeouts record fired/disposed immediately
+- Disposing a timeout handle records a dispose without firing
+
+**Test Coverage:** 8 properties
+
 ### Medium Priority Features (Not Yet Implemented)
 
 ## Implementation Details
@@ -156,10 +173,11 @@ Clockworks/
 │       └── HlcCoordinator.cs
 ├── tests/                            # Existing C# xUnit tests (44 tests)
 │   └── Clockworks.Tests.csproj
-└── tests-property/                   # NEW: F# property tests (43 tests)
+└── tests-property/                   # NEW: F# property tests (51 tests)
     ├── Clockworks.PropertyTests.fsproj
     ├── HlcTimestampProperties.fs     # 9 properties
     ├── HlcCoordinatorProperties.fs   # 5 properties
+    ├── InstrumentationStatisticsProperties.fs # 8 properties
     ├── UuidV7FactoryProperties.fs    # 7 tests
     ├── SimulatedTimeProviderProperties.fs  # 9 properties
     ├── VectorClockProperties.fs      # 7 properties
@@ -171,20 +189,21 @@ Clockworks/
 
 ### Test Counts
 
-- **Total Property Tests**: 43
+- **Total Property Tests**: 51
 - **Total Example Tests** (existing): 44
-- **Combined Coverage**: 87 tests
+- **Combined Coverage**: 95 tests
 
 ### Property Test Distribution
 
 ```
-HlcTimestamp:            9 tests (21%)
-SimulatedTimeProvider:   9 tests (21%)
-UuidV7Factory:           7 tests (16%)
-VectorClock:             7 tests (16%)
-HlcCoordinator:          5 tests (12%)
-VectorClockCoordinator:  4 tests (9%)
-Timeouts:                2 tests (5%)
+HlcTimestamp:            9 tests (17%)
+SimulatedTimeProvider:   9 tests (17%)
+Instrumentation:         8 tests (16%)
+UuidV7Factory:           7 tests (14%)
+VectorClock:             7 tests (14%)
+HlcCoordinator:          5 tests (10%)
+VectorClockCoordinator:  4 tests (8%)
+Timeouts:                2 tests (4%)
 ```
 
 ## Property Testing Benefits for Clockworks
@@ -220,15 +239,11 @@ Property tests serve as executable specifications:
 
 ### Issues to Fix
 
-- None currently in the property test suite. All 43 tests pass locally.
+- None currently in the property test suite. All 51 tests pass locally.
 
 ### Future Property Tests
 
-1. **Statistics/Instrumentation** (2-3 properties)
-   - Counter monotonicity
-   - Metric accuracy
-
-2. **Performance Properties** (2-3 properties)
+1. **Performance Properties** (2-3 properties)
    - UUID generation completes within time bounds
    - Lock-free operations don't deadlock
    - Memory usage stays bounded
@@ -238,7 +253,7 @@ Property tests serve as executable specifications:
 ✅ **Project Setup Complete**
 - F# test project created and integrated
 - FsCheck.Xunit.v3 configured with xUnit v3
-- 43 properties discovered and running
+- 51 properties discovered and running
 - Build and test infrastructure working
 
 ✅ **Documentation Complete**
@@ -254,22 +269,22 @@ Property tests serve as executable specifications:
 - SimulatedTimeProvider: 9 properties covering determinism, timers, advancement
 - VectorClock: 7 properties covering merge algebra and serialization
 - VectorClockCoordinator: 4 properties covering send/receive causality
+- Instrumentation: 8 properties covering timer/timeout statistics accuracy
 - Timeouts: 2 properties covering cancellation timing
 
 ✅ **Property Suite Health**
-- 43/43 tests passing locally
+- 51/51 tests passing locally
 
 ## Recommendations
 
 ### For Immediate Use
-1. **Use passing tests now** - 43/43 tests provide immediate value
+1. **Use passing tests now** - 51/51 tests provide immediate value
 2. **Keep failures actionable** - Treat property test failures as regressions
 3. **Integrate into CI** - Add property tests to build pipeline
 
 ### For Future Development
-1. **Add statistics/instrumentation properties** - Validate counters/metrics
-2. **Consider stateful property testing** - For complex concurrent scenarios
-3. **Performance properties** - Verify lock-free algorithms scale
+1. **Consider stateful property testing** - For complex concurrent scenarios
+2. **Performance properties** - Verify lock-free algorithms scale
 
 ### For Team Adoption
 1. **Review README** - Comprehensive guide for contributors
@@ -280,7 +295,7 @@ Property tests serve as executable specifications:
 
 We have successfully planned and implemented a comprehensive property-based testing framework for Clockworks using FsCheck in F#. The framework includes:
 
-- ✅ 43 property tests across 7 core components
+- ✅ 51 property tests across 8 core components
 - ✅ F# project integrated with existing C# codebase
 - ✅ xUnit v3 and FsCheck.Xunit.v3 integration
 - ✅ Comprehensive documentation and best practices
@@ -291,6 +306,7 @@ The property tests provide rigorous verification of:
 - Causality preservation (HlcTimestamp)
 - Message causality coordination (HlcCoordinator)
 - Deterministic behavior (SimulatedTimeProvider)
+- Statistics accuracy (Instrumentation)
 - Merge algebra and serialization (VectorClock)
 - Vector clock coordination (VectorClockCoordinator)
 - Cancellation timing (Timeouts)

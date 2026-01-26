@@ -18,6 +18,7 @@ tests-property/
 ├── Clockworks.PropertyTests.fsproj    # F# test project with FsCheck.Xunit.v3
 ├── HlcTimestampProperties.fs          # Properties for Hybrid Logical Clock timestamps
 ├── HlcCoordinatorProperties.fs        # Properties for HLC message coordination
+├── InstrumentationStatisticsProperties.fs # Properties for instrumentation counters
 ├── UuidV7FactoryProperties.fs         # Properties for UUIDv7 generation
 ├── SimulatedTimeProviderProperties.fs # Properties for deterministic time simulation
 ├── VectorClockProperties.fs           # Properties for Vector Clock ordering/merging
@@ -157,7 +158,24 @@ Tests for Vector Clock message coordination, ensuring causal ordering and concur
 - Send/receive operations preserve happens-before relationships
 - Local node counters always advance on send/receive
 
-### 7. Timeouts Properties (`TimeoutsProperties.fs`)
+### 7. Instrumentation Statistics (`InstrumentationStatisticsProperties.fs`)
+
+Tests for statistics counters on simulated time and timeouts.
+
+**Properties Tested:**
+- ✅ **Advance accounting**: Advance call/tick totals match inputs
+- ✅ **Timer creation**: Queue and creation counters reflect scheduled timers
+- ✅ **Timer changes**: Change operations increment the counter
+- ✅ **Callback tracking**: One-shot timers record fired/disposed counts
+- ✅ **Periodic reschedules**: Periodic timers record reschedule events
+- ✅ **Timeout accounting**: Fired/disposed counts update for positive timeouts
+- ✅ **Immediate timeout**: Non-positive timeouts record fired/disposed immediately
+- ✅ **Handle disposal**: Disposing before due records disposal without firing
+
+**Invariants:**
+- Statistics counters are monotonic and reflect observed events
+
+### 8. Timeouts Properties (`TimeoutsProperties.fs`)
 
 Tests for `Timeouts` cancellation semantics driven by a `TimeProvider`.
 
