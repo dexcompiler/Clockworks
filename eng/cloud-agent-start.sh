@@ -40,14 +40,22 @@ if ! command -v dotnet >/dev/null 2>&1; then
   fi
 fi
 
-echo "[start] dotnet: $(dotnet --version)"
+if command -v dotnet >/dev/null 2>&1; then
+  echo "[start] dotnet: $(dotnet --version)"
+else
+  echo "[start] warning: dotnet not found on PATH"
+fi
 
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   cd "$(git rev-parse --show-toplevel)"
 
   # Optional: quick restore if you want “always ready”
   # (If you find this slows startup too much, remove it.)
-  dotnet restore >/dev/null
+  if command -v dotnet >/dev/null 2>&1; then
+    dotnet restore >/dev/null
+  else
+    echo "[start] warning: skipping dotnet restore (dotnet not found)"
+  fi
 
   # Optional: build warm-up (I usually avoid this on start; do it only if you like)
   # dotnet build -c Release -v minimal >/dev/null

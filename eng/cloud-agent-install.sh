@@ -42,8 +42,21 @@ else
   echo "[install] Warning: /etc/profile.d/dotnet-cloud-agent.sh is not readable; continuing"
 fi
 
-dotnet --version
-dotnet --info
+dotnet_cmd=""
+if command -v dotnet >/dev/null 2>&1; then
+  dotnet_cmd="dotnet"
+elif [[ -x "$HOME/.dotnet/dotnet" ]]; then
+  dotnet_cmd="$HOME/.dotnet/dotnet"
+elif [[ -x "/usr/share/dotnet/dotnet" ]]; then
+  dotnet_cmd="/usr/share/dotnet/dotnet"
+fi
+
+if [[ -n "$dotnet_cmd" ]]; then
+  "$dotnet_cmd" --version
+  "$dotnet_cmd" --info
+else
+  echo "[install] Warning: dotnet not found; skipping dotnet checks"
+fi
 
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "[install] Repo detected: $(git rev-parse --show-toplevel)"
@@ -54,14 +67,18 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     cat global.json
   fi
 
-  if [[ -f .config/dotnet-tools.json ]]; then
-    dotnet tool restore
+  if [[ -n "$dotnet_cmd" ]]; then
+    if [[ -f .config/dotnet-tools.json ]]; then
+      "$dotnet_cmd" tool restore
+    fi
+
+    "$dotnet_cmd" workload restore || true
+
+    # Prime NuGet cache
+    "$dotnet_cmd" restore
+  else
+    echo "[install] Warning: dotnet not available; skipping restore"
   fi
-
-  dotnet workload restore || true
-
-  # Prime NuGet cache
-  dotnet restore
 fi
 
 echo "[install] done"
