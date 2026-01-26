@@ -19,8 +19,15 @@ export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
 # Keep NuGet packages in a stable path (fast incremental restores)
 export NUGET_PACKAGES="$HOME/.nuget/packages"
 
-export DOTNET_ROOT="${DOTNET_ROOT:-/usr/share/dotnet}"
-export PATH="$PATH:$HOME/.dotnet/tools"
+if [ -z "${DOTNET_ROOT:-}" ]; then
+  if [ -x "$HOME/.dotnet/dotnet" ]; then
+    export DOTNET_ROOT="$HOME/.dotnet"
+  else
+    export DOTNET_ROOT="/usr/share/dotnet"
+  fi
+fi
+
+export PATH="$DOTNET_ROOT:$PATH:$HOME/.dotnet/tools"
 EOF
 
 sudo install -m 0644 "$tmp" /etc/profile.d/dotnet-cloud-agent.sh
