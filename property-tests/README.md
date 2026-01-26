@@ -19,6 +19,7 @@ tests-property/
 ├── HlcTimestampProperties.fs          # Properties for Hybrid Logical Clock timestamps
 ├── HlcCoordinatorProperties.fs        # Properties for HLC message coordination
 ├── InstrumentationStatisticsProperties.fs # Properties for instrumentation counters
+├── PerformanceProperties.fs           # Performance properties (bounded runtimes)
 ├── UuidV7FactoryProperties.fs         # Properties for UUIDv7 generation
 ├── SimulatedTimeProviderProperties.fs # Properties for deterministic time simulation
 ├── VectorClockProperties.fs           # Properties for Vector Clock ordering/merging
@@ -175,7 +176,19 @@ Tests for statistics counters on simulated time and timeouts.
 **Invariants:**
 - Statistics counters are monotonic and reflect observed events
 
-### 8. Timeouts Properties (`TimeoutsProperties.fs`)
+### 8. Performance Properties (`PerformanceProperties.fs`)
+
+Tests for performance-sensitive paths using deterministic time sources.
+
+**Properties Tested:**
+- ✅ **Bulk UUID throughput**: 60k UUIDs complete within 1 second
+- ✅ **Concurrent UUID throughput**: 50k UUIDs in parallel complete within 1 second
+- ✅ **Timer advance throughput**: advancing 10k timers completes within 1 second
+
+**Invariants:**
+- Performance stays within expected bounds for critical operations
+
+### 9. Timeouts Properties (`TimeoutsProperties.fs`)
 
 Tests for `Timeouts` cancellation semantics driven by a `TimeProvider`.
 
@@ -294,7 +307,6 @@ When testing concurrent code or using `TimeProvider.System`:
 
 ## Future Work
 
-- [ ] Performance properties (e.g., "UUID generation completes within X ms")
 - [ ] Stateful property testing for concurrent scenarios
 
 ## References

@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document outlines the planning, implementation, and identification of property-based testing opportunities for the Clockworks library. We have successfully created an F# property test project using FsCheck that tests the core features of Clockworks through 51 property tests.
+This document outlines the planning, implementation, and identification of property-based testing opportunities for the Clockworks library. We have successfully created an F# property test project using FsCheck that tests the core features of Clockworks through 54 property tests.
 
 ## Project Background
 
@@ -147,6 +147,18 @@ This document outlines the planning, implementation, and identification of prope
 
 **Test Coverage:** 8 properties
 
+#### 9. **Performance** ⭐
+**Why Property Testing?**
+- Catch performance regressions in critical paths
+- Ensure deterministic simulations remain fast
+
+**Properties Tested:**
+- Bulk UUID generation completes within 1 second (60k UUIDs)
+- Concurrent UUID generation completes within 1 second (50k UUIDs)
+- Advancing 10k timers completes within 1 second
+
+**Test Coverage:** 3 properties
+
 ### Medium Priority Features (Not Yet Implemented)
 
 ## Implementation Details
@@ -173,11 +185,12 @@ Clockworks/
 │       └── HlcCoordinator.cs
 ├── tests/                            # Existing C# xUnit tests (44 tests)
 │   └── Clockworks.Tests.csproj
-└── tests-property/                   # NEW: F# property tests (51 tests)
+└── tests-property/                   # NEW: F# property tests (54 tests)
     ├── Clockworks.PropertyTests.fsproj
     ├── HlcTimestampProperties.fs     # 9 properties
     ├── HlcCoordinatorProperties.fs   # 5 properties
     ├── InstrumentationStatisticsProperties.fs # 8 properties
+    ├── PerformanceProperties.fs      # 3 properties
     ├── UuidV7FactoryProperties.fs    # 7 tests
     ├── SimulatedTimeProviderProperties.fs  # 9 properties
     ├── VectorClockProperties.fs      # 7 properties
@@ -189,20 +202,21 @@ Clockworks/
 
 ### Test Counts
 
-- **Total Property Tests**: 51
+- **Total Property Tests**: 54
 - **Total Example Tests** (existing): 44
-- **Combined Coverage**: 95 tests
+- **Combined Coverage**: 98 tests
 
 ### Property Test Distribution
 
 ```
 HlcTimestamp:            9 tests (17%)
 SimulatedTimeProvider:   9 tests (17%)
-Instrumentation:         8 tests (16%)
-UuidV7Factory:           7 tests (14%)
-VectorClock:             7 tests (14%)
-HlcCoordinator:          5 tests (10%)
-VectorClockCoordinator:  4 tests (8%)
+Instrumentation:         8 tests (15%)
+UuidV7Factory:           7 tests (13%)
+VectorClock:             7 tests (13%)
+HlcCoordinator:          5 tests (9%)
+VectorClockCoordinator:  4 tests (7%)
+Performance:             3 tests (6%)
 Timeouts:                2 tests (4%)
 ```
 
@@ -239,21 +253,24 @@ Property tests serve as executable specifications:
 
 ### Issues to Fix
 
-- None currently in the property test suite. All 51 tests pass locally.
+- None currently in the property test suite. All 54 tests pass locally.
 
 ### Future Property Tests
 
-1. **Performance Properties** (2-3 properties)
-   - UUID generation completes within time bounds
-   - Lock-free operations don't deadlock
+1. **Stateful property testing** (2-3 properties)
+   - Model-based concurrency flows
+   - Long-running simulation sequences
+
+2. **Extended performance properties** (2-3 properties)
    - Memory usage stays bounded
+   - Throughput under sustained contention
 
 ## Success Metrics
 
 ✅ **Project Setup Complete**
 - F# test project created and integrated
 - FsCheck.Xunit.v3 configured with xUnit v3
-- 51 properties discovered and running
+- 54 properties discovered and running
 - Build and test infrastructure working
 
 ✅ **Documentation Complete**
@@ -270,15 +287,16 @@ Property tests serve as executable specifications:
 - VectorClock: 7 properties covering merge algebra and serialization
 - VectorClockCoordinator: 4 properties covering send/receive causality
 - Instrumentation: 8 properties covering timer/timeout statistics accuracy
+- Performance: 3 properties covering throughput bounds
 - Timeouts: 2 properties covering cancellation timing
 
 ✅ **Property Suite Health**
-- 51/51 tests passing locally
+- 54/54 tests passing locally
 
 ## Recommendations
 
 ### For Immediate Use
-1. **Use passing tests now** - 51/51 tests provide immediate value
+1. **Use passing tests now** - 54/54 tests provide immediate value
 2. **Keep failures actionable** - Treat property test failures as regressions
 3. **Integrate into CI** - Add property tests to build pipeline
 
@@ -295,7 +313,7 @@ Property tests serve as executable specifications:
 
 We have successfully planned and implemented a comprehensive property-based testing framework for Clockworks using FsCheck in F#. The framework includes:
 
-- ✅ 51 property tests across 8 core components
+- ✅ 54 property tests across 9 core components
 - ✅ F# project integrated with existing C# codebase
 - ✅ xUnit v3 and FsCheck.Xunit.v3 integration
 - ✅ Comprehensive documentation and best practices
@@ -307,6 +325,7 @@ The property tests provide rigorous verification of:
 - Message causality coordination (HlcCoordinator)
 - Deterministic behavior (SimulatedTimeProvider)
 - Statistics accuracy (Instrumentation)
+- Performance bounds (Performance)
 - Merge algebra and serialization (VectorClock)
 - Vector clock coordination (VectorClockCoordinator)
 - Cancellation timing (Timeouts)

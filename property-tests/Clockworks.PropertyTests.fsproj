@@ -10,6 +10,7 @@
     <Compile Include="HlcTimestampProperties.fs" />
     <Compile Include="HlcCoordinatorProperties.fs" />
     <Compile Include="InstrumentationStatisticsProperties.fs" />
+    <Compile Include="PerformanceProperties.fs" />
     <Compile Include="UuidV7FactoryProperties.fs" />
     <Compile Include="SimulatedTimeProviderProperties.fs" />
     <Compile Include="VectorClockProperties.fs" />
