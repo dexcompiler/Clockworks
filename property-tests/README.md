@@ -21,6 +21,7 @@ tests-property/
 ├── UuidV7FactoryProperties.fs         # Properties for UUIDv7 generation
 ├── SimulatedTimeProviderProperties.fs # Properties for deterministic time simulation
 ├── VectorClockProperties.fs           # Properties for Vector Clock ordering/merging
+├── VectorClockCoordinatorProperties.fs # Properties for Vector Clock coordination
 ├── TimeoutsProperties.fs              # Properties for Timeouts cancellation behavior
 ├── PROPERTY_TESTING_PLAN.md           # Implementation plan and summary
 └── README.md                          # This file
@@ -142,7 +143,21 @@ Tests for the Vector Clock implementation, verifying merge algebra and serializa
 - Merge yields the least upper bound of two clocks
 - Serialization formats preserve ordering and identity
 
-### 6. Timeouts Properties (`TimeoutsProperties.fs`)
+### 6. VectorClockCoordinator Properties (`VectorClockCoordinatorProperties.fs`)
+
+Tests for Vector Clock message coordination, ensuring causal ordering and concurrency detection.
+
+**Properties Tested:**
+- ✅ **Send increments local counter**: BeforeSend advances the local node
+- ✅ **Receive merges and increments**: BeforeReceive merges then increments local
+- ✅ **Causal chain**: Receive then send yields a later clock
+- ✅ **Concurrency**: Independent sends from distinct nodes are concurrent
+
+**Invariants:**
+- Send/receive operations preserve happens-before relationships
+- Local node counters always advance on send/receive
+
+### 7. Timeouts Properties (`TimeoutsProperties.fs`)
 
 Tests for `Timeouts` cancellation semantics driven by a `TimeProvider`.
 
@@ -261,7 +276,6 @@ When testing concurrent code or using `TimeProvider.System`:
 
 ## Future Work
 
-- [ ] Add properties for `VectorClockCoordinator` message flow
 - [ ] Performance properties (e.g., "UUID generation completes within X ms")
 - [ ] Stateful property testing for concurrent scenarios
 
