@@ -91,7 +91,36 @@ var header = new VectorClockMessageHeader(
     clock: clockA,
     correlationId: Guid.NewGuid()
 );
-var headerString = header.ToString(); // "1:1"
+var headerString = header.ToString(); // "1:1;{correlationId}" (example)
+```
+
+### Hybrid Logical Clock (HLC) propagation
+
+In Clockworks, a "remote timestamp" is the `HlcTimestamp` produced on a different node and carried over the wire
+via `HlcMessageHeader` (format: `walltime.counter@node`). The receiver should call `BeforeReceive(...)` with that
+timestamp to preserve causality.
+
+```csharp
+var tp = new SimulatedTimeProvider();
+
+using var aFactory = new HlcGuidFactory(tp, nodeId: 1);
+using var bFactory = new HlcGuidFactory(tp, nodeId: 2);
+
+var a = new HlcCoordinator(aFactory);
+var b = new HlcCoordinator(bFactory);
+
+// A sends
+var t1 = a.BeforeSend();
+var header = new HlcMessageHeader(t1, correlationId: Guid.NewGuid());
+var headerValue = header.ToString();
+
+// B receives
+var parsed = HlcMessageHeader.Parse(headerValue);
+b.BeforeReceive(parsed.Timestamp);
+
+// B sends after receiving; should be > received timestamp
+var t2 = b.BeforeSend();
+Console.WriteLine(t1 < t2); // true
 ```
 
 ## Distributed Systems Support
@@ -219,6 +248,16 @@ curl -X POST "http://localhost:5000/simulate?mode=Simulated&orders=10&tickMs=5&m
 - License: MIT
 - Repository: https://github.com/dexcompiler/Clockworks
 
+## Versioning & releases
+
+Clockworks follows Semantic Versioning (SemVer).
+
+- Package version is defined in `src/Clockworks.csproj`.
+- Release tags use the format `vX.Y.Z` (example: `v1.2.0`).
+- See `CHANGELOG.md` for notable changes.
+
+Build-wide defaults are centralized in `Directory.Build.props`.
+
 ## Security considerations
 
 ### UUIDv7 time exposure
@@ -242,3 +281,8 @@ Wall time can be modified independently for clock-skew/rewind simulations.
 ## Contributing
 
 Issues and PRs are welcome. Please include tests for behavioral changes.
+
+## Property tests
+
+Property-based tests live under `property-tests/` and are implemented with FsCheck + xUnit.
+See `property-tests/README.md` for how to run them and what invariants are covered.

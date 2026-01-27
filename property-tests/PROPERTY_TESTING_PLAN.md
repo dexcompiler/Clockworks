@@ -2,7 +2,8 @@
 
 ## Executive Summary
 
-This document outlines the planning, implementation, and identification of property-based testing opportunities for the Clockworks library. We have successfully created an F# property test project using FsCheck that tests the core features of Clockworks through 54 property tests.
+This document outlines the planning, implementation, and identification of property-based testing opportunities for the Clockworks library.
+The `property-tests/` project contains FsCheck-based property tests that exercise the core invariants of Clockworks.
 
 ## Project Background
 
@@ -111,11 +112,14 @@ This document outlines the planning, implementation, and identification of prope
 **Properties Tested:**
 - Sequential send timestamps are strictly increasing
 - Receiving any remote timestamp advances the local timestamp
-- Remote-ahead wall time is adopted with counter = 1
+- Remote-ahead wall time is adopted with counter advanced beyond remote
+- Remote-ahead within the same wall time (higher counter) is adopted and exceeded
+- NodeId tie-break cases are handled deterministically
 - Receive then send yields a timestamp after the remote
 - Counter resets to 0 when physical time jumps ahead
+- Mixed send/receive/physical-time sequences preserve invariants
 
-**Test Coverage:** 5 properties
+**Test Coverage:** 8 properties
 
 #### 7. **VectorClockCoordinator** ⭐
 **Why Property Testing?**
@@ -185,10 +189,10 @@ Clockworks/
 │       └── HlcCoordinator.cs
 ├── tests/                            # Existing C# xUnit tests (44 tests)
 │   └── Clockworks.Tests.csproj
-└── tests-property/                   # NEW: F# property tests (54 tests)
+└── property-tests/                   # F# property tests (FsCheck)
     ├── Clockworks.PropertyTests.fsproj
     ├── HlcTimestampProperties.fs     # 9 properties
-    ├── HlcCoordinatorProperties.fs   # 5 properties
+    ├── HlcCoordinatorProperties.fs   # 8 properties
     ├── InstrumentationStatisticsProperties.fs # 8 properties
     ├── PerformanceProperties.fs      # 3 properties
     ├── UuidV7FactoryProperties.fs    # 7 tests
@@ -202,23 +206,11 @@ Clockworks/
 
 ### Test Counts
 
-- **Total Property Tests**: 54
-- **Total Example Tests** (existing): 44
-- **Combined Coverage**: 98 tests
+Test counts change over time; use `dotnet test --list-tests` (or CI summaries) for the current totals.
 
 ### Property Test Distribution
 
-```
-HlcTimestamp:            9 tests (17%)
-SimulatedTimeProvider:   9 tests (17%)
-Instrumentation:         8 tests (15%)
-UuidV7Factory:           7 tests (13%)
-VectorClock:             7 tests (13%)
-HlcCoordinator:          5 tests (9%)
-VectorClockCoordinator:  4 tests (7%)
-Performance:             3 tests (6%)
-Timeouts:                2 tests (4%)
-```
+Distribution is tracked by module (see `property-tests/README.md`).
 
 ## Property Testing Benefits for Clockworks
 
@@ -253,7 +245,7 @@ Property tests serve as executable specifications:
 
 ### Issues to Fix
 
-- None currently in the property test suite. All 54 tests pass locally.
+- None currently in the property test suite.
 
 ### Future Property Tests
 
