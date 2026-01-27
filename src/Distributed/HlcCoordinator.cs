@@ -162,11 +162,9 @@ public sealed class HlcStatistics
     {
         Interlocked.Increment(ref _receiveCount);
 
-        // Clock advances due to remote when:
-        // 1. The remote timestamp was ahead of our local time before witnessing, AND
-        // 2. The remote timestamp was adopted (became our new wall time after witnessing)
-        // This indicates the local clock moved forward by adopting the remote timestamp.
-        if (remote.WallTimeMs > before.WallTimeMs && after.WallTimeMs == remote.WallTimeMs)
+        // Clock advances due to remote when the remote timestamp is ahead of the local timestamp
+        // prior to witnessing and the post-witness wall time matches the remote wall time.
+        if (remote > before && after.WallTimeMs == remote.WallTimeMs)
         {
             Interlocked.Increment(ref _clockAdvances);
         }

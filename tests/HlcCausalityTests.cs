@@ -55,4 +55,29 @@ public sealed class HlcCausalityTests
         Assert.True(a1 <= a2);
         Assert.True(b1 <= b2);
     }
+
+    [Fact]
+    public void Receive_RemoteSameWallTimeHigherCounter_AdoptsAndExceedsRemoteCounter()
+    {
+        var tp = SimulatedTimeProvider.FromUnixMs(1_700_000_000_000);
+
+        using var a = new HlcGuidFactory(tp, nodeId: 1);
+        using var b = new HlcGuidFactory(tp, nodeId: 2);
+
+        var coordA = new HlcCoordinator(a);
+        var coordB = new HlcCoordinator(b);
+
+        // Establish local time on B.
+        var b0 = coordB.BeforeSend();
+
+        // Remote timestamp has same wall time but higher counter.
+        var remote = new HlcTimestamp(b0.WallTimeMs, counter: (ushort)(b0.Counter + 5), nodeId: 1);
+
+        coordB.BeforeReceive(remote);
+        var after = coordB.CurrentTimestamp;
+
+        Assert.True(after > remote);
+        Assert.Equal(remote.WallTimeMs, after.WallTimeMs);
+        Assert.Equal((ushort)(remote.Counter + 1), after.Counter);
+    }
 }

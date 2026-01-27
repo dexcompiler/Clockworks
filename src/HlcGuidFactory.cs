@@ -185,7 +185,54 @@ public sealed class HlcGuidFactory : IHlcGuidFactory, IDisposable
     /// <inheritdoc/>
     public void Witness(HlcTimestamp remoteTimestamp)
     {
-        Witness(remoteTimestamp.WallTimeMs);
+        lock (_lock)
+        {
+            var physicalTimeMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+
+            // Physical time participates in max selection but has no counter/node information.
+            // We treat it as (physicalTimeMs, 0, 0) for ordering purposes.
+            var physical = new HlcTimestamp(physicalTimeMs, counter: 0, nodeId: 0);
+            var local = new HlcTimestamp(_logicalTimeMs, _counter, _nodeId);
+
+            var max = local;
+            if (remoteTimestamp > max) max = remoteTimestamp;
+            if (physical > max) max = physical;
+
+            if (max.WallTimeMs == local.WallTimeMs && max.Counter == local.Counter && max.NodeId == local.NodeId)
+            {
+                // Local time is already the max (or tied with max) - just increment counter.
+                _counter++;
+                if (_counter > MaxCounterValue)
+                {
+                    _logicalTimeMs++;
+                    _counter = 0;
+                }
+            }
+            else if (max.WallTimeMs == remoteTimestamp.WallTimeMs && max.Counter == remoteTimestamp.Counter && max.NodeId == remoteTimestamp.NodeId)
+            {
+                // Remote timestamp is the max - adopt its wall time and advance counter beyond it.
+                _logicalTimeMs = remoteTimestamp.WallTimeMs;
+                _counter = (ushort)(remoteTimestamp.Counter + 1);
+                if (_counter > MaxCounterValue)
+                {
+                    _logicalTimeMs++;
+                    _counter = 0;
+                }
+            }
+            else
+            {
+                // Physical time is the max - sync to it.
+                _logicalTimeMs = physicalTimeMs;
+                _counter = 0;
+            }
+
+            // Check drift bounds
+            var drift = _logicalTimeMs - physicalTimeMs;
+            if (drift > _options.MaxDriftMs && _options.ThrowOnExcessiveDrift)
+            {
+                throw new HlcDriftException(drift, _options.MaxDriftMs);
+            }
+        }
     }
 
     /// <inheritdoc/>
