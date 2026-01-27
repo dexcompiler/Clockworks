@@ -2,6 +2,8 @@
 
 This directory contains property-based tests for the Clockworks library using [FsCheck](https://fscheck.github.io/FsCheck/), an F# implementation of QuickCheck for testing .NET code.
 
+For library usage docs, see the repo root `README.md`. For notable changes between releases, see `CHANGELOG.md`.
+
 ## Why Property Testing?
 
 Property-based testing complements traditional example-based unit tests by:
@@ -14,7 +16,7 @@ Property-based testing complements traditional example-based unit tests by:
 ## Project Structure
 
 ```
-tests-property/
+property-tests/
 ├── Clockworks.PropertyTests.fsproj    # F# test project with FsCheck.Xunit.v3
 ├── HlcTimestampProperties.fs          # Properties for Hybrid Logical Clock timestamps
 ├── HlcCoordinatorProperties.fs        # Properties for HLC message coordination
@@ -40,10 +42,10 @@ tests-property/
 
 ```bash
 # Run all property tests
-dotnet test tests-property/Clockworks.PropertyTests.fsproj
+dotnet test property-tests/Clockworks.PropertyTests.fsproj
 
 # Run with verbose output
-dotnet test tests-property/Clockworks.PropertyTests.fsproj -v detailed
+dotnet test property-tests/Clockworks.PropertyTests.fsproj -v detailed
 
 # Run specific test module
 dotnet test --filter "FullyQualifiedName~UuidV7FactoryProperties"
@@ -82,8 +84,15 @@ Tests for HLC message coordination, ensuring causality and counter behavior.
 - ✅ **Send monotonicity**: Sequential sends produce increasing timestamps
 - ✅ **Receive advances local**: Any receive advances the local timestamp
 - ✅ **Remote adoption**: Remote-ahead wall time is adopted with counter = 1
+- ✅ **Remote counter adoption**: Remote-ahead counter at same wall time is adopted and exceeded
+- ✅ **NodeId tie-break**: Remote ahead by nodeId (same wall time and counter) is adopted and exceeded
 - ✅ **Causal chain**: Receive then send yields a later timestamp than the remote
 - ✅ **Counter reset**: Physical time jumps reset the counter to zero on send
+- ✅ **Mixed interleavings**: Random send/receive/time sequences preserve invariants
+
+**Notes:**
+- Some properties use `HlcOptions.HighThroughput` to avoid drift exceptions in adversarial sequences
+  (e.g., when physical time is moved backwards) while still asserting monotonicity/causal ordering.
 
 **Invariants:**
 - Local timestamps always move forward on send/receive
