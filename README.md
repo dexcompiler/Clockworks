@@ -28,7 +28,7 @@ It is built around `TimeProvider` so that *time becomes an injectable dependency
 
 - **Vector Clock**
   - Full vector clock implementation for exact causality tracking and concurrency detection
-  - Performance-first sorted-array representation optimized for sparse clocks
+  - Sorted-array representation optimized for sparse clocks
   - `VectorClockCoordinator` for thread-safe clock management across distributed nodes
   - Message header propagation for HTTP/gRPC integration
 
@@ -127,16 +127,38 @@ Console.WriteLine(t1 < t2); // true
 
 ### Hybrid Logical Clock (HLC)
 
-HLC provides **bounded** causality tracking that stays close to physical time. Best for:
+HLC provides causality tracking that stays close to physical time, with a configurable maximum drift (`HlcOptions.MaxDriftMs`).
+When `ThrowOnExcessiveDrift=true`, drift is enforced by throwing `HlcDriftException` once the bound is exceeded.
+Best for:
 - Systems where wall-clock time matters (e.g., trading systems with time-based SLAs)
 - High-throughput systems where O(1) overhead is critical
 - Scenarios where approximate causality is sufficient
 
 **Trade-offs:**
 - ✅ O(1) space and time complexity
-- ✅ Stays close to physical time
+- ✅ Stays close to physical time (bounded drift enforcement is configurable)
 - ❌ Cannot detect concurrency (only ordering)
 - ❌ Requires synchronized physical clocks for best results
+
+**Example: strict vs. high-throughput drift behavior**
+
+```csharp
+var tp = TimeProvider.System;
+
+// Strict: enforce bounded drift by throwing
+using var strict = new HlcGuidFactory(tp, nodeId: 1, options: new HlcOptions
+{
+    MaxDriftMs = 1_000,
+    ThrowOnExcessiveDrift = true
+});
+
+// High-throughput: allow drift to exceed MaxDriftMs (maintains monotonicity)
+using var highThroughput = new HlcGuidFactory(tp, nodeId: 1, options: new HlcOptions
+{
+    MaxDriftMs = 60_000,
+    ThrowOnExcessiveDrift = false
+});
+```
 
 ### Vector Clock
 
