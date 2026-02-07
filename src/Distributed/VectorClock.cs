@@ -384,7 +384,7 @@ public readonly struct VectorClock : IEquatable<VectorClock>
     /// </summary>
     public static VectorClock Parse(string s)
     {
-        if (string.IsNullOrEmpty(s))
+        if (string.IsNullOrWhiteSpace(s))
             return new VectorClock();
 
         var entries = s.Split(',', StringSplitOptions.RemoveEmptyEntries);
@@ -394,7 +394,7 @@ public readonly struct VectorClock : IEquatable<VectorClock>
         var pairs = new List<(ushort nodeId, ulong counter)>();
         foreach (var entry in entries)
         {
-            var parts = entry.Split(':');
+            var parts = entry.Split(':', 2, StringSplitOptions.None);
             if (parts.Length != 2)
                 throw new FormatException($"Invalid vector clock entry: {entry}");
 
@@ -428,7 +428,7 @@ public readonly struct VectorClock : IEquatable<VectorClock>
             counters.Add(pair.counter);
         }
 
-        return new VectorClock(nodeIds.ToArray(), counters.ToArray());
+        return new VectorClock([.. nodeIds], [.. counters]);
     }
 
     /// <summary>
@@ -437,7 +437,7 @@ public readonly struct VectorClock : IEquatable<VectorClock>
     public static bool TryParse(string? s, out VectorClock result)
     {
         result = default;
-        if (string.IsNullOrEmpty(s))
+        if (string.IsNullOrWhiteSpace(s))
         {
             result = new VectorClock();
             return true;

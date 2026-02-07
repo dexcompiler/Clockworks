@@ -159,18 +159,17 @@ public sealed class HlcGuidFactory : IHlcGuidFactory, IDisposable
                     // Counter overflow - must advance logical time
                     _logicalTimeMs++;
                     _counter = 0;
-                    
-                    // Check drift bounds
-                    var drift = _logicalTimeMs - physicalTimeMs;
-                    if (drift > _options.MaxDriftMs)
-                    {
-                        if (_options.ThrowOnExcessiveDrift)
-                        {
-                            throw new HlcDriftException(drift, _options.MaxDriftMs);
-                        }
-                        // Otherwise, we accept the drift (for high-throughput scenarios)
-                    }
                 }
+            }
+
+            var drift = _logicalTimeMs - physicalTimeMs;
+            if (drift > _options.MaxDriftMs)
+            {
+                if (_options.ThrowOnExcessiveDrift)
+                {
+                    throw new HlcDriftException(drift, _options.MaxDriftMs);
+                }
+                // Otherwise, we accept the drift (for high-throughput scenarios)
             }
             
             timestamp = new HlcTimestamp(_logicalTimeMs, _counter, _nodeId);
