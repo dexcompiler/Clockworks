@@ -38,7 +38,7 @@ public static class ServiceCollectionExtensions
             RandomNumberGenerator? rng = null,
             CounterOverflowBehavior overflowBehavior = CounterOverflowBehavior.SpinWait)
         {
-            services.AddSingleton(timeProvider);
+            services.TryAddSingleton(timeProvider);
             services.AddSingleton<IUuidV7Factory>(new UuidV7Factory(timeProvider, rng, overflowBehavior));
             services.AddSingleton(sp => (UuidV7Factory)sp.GetRequiredService<IUuidV7Factory>());
 
@@ -74,7 +74,7 @@ public static class ServiceCollectionExtensions
             HlcOptions? options = null,
             RandomNumberGenerator? rng = null)
         {
-            services.AddSingleton(timeProvider);
+            services.TryAddSingleton(timeProvider);
             services.AddSingleton<IHlcGuidFactory>(new HlcGuidFactory(timeProvider, nodeId, options, rng));
             services.AddSingleton<IUuidV7Factory>(sp => sp.GetRequiredService<IHlcGuidFactory>());
             services.AddSingleton(sp => (HlcGuidFactory)sp.GetRequiredService<IHlcGuidFactory>());
