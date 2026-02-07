@@ -26,7 +26,7 @@ namespace Clockworks.Distributed;
 public sealed class VectorClockCoordinator
 {
     private readonly ushort _nodeId;
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private VectorClock _current;
 
     /// <summary>
