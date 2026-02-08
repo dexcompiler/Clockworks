@@ -365,7 +365,7 @@ public sealed class HlcGuidFactory : IHlcGuidFactory, IDisposable
         bytes[8] = (byte)(VariantRfc4122 | (bytes[8] & VariantMask));
 
         // Bytes 10-15: random (48 bits)
-        randomBytes.Slice(0, 6).CopyTo(bytes.Slice(10, 6));
+        randomBytes[..6].CopyTo(bytes.Slice(10, 6));
 
         return new Guid(bytes, bigEndian: true);
     }
