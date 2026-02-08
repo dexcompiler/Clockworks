@@ -100,15 +100,40 @@ public readonly record struct HlcMessageHeader
     {
         header = default;
         if (string.IsNullOrEmpty(value)) return false;
-        
-        try
+
+        var span = value.AsSpan();
+        var firstSep = span.IndexOf(';');
+
+        HlcTimestamp timestamp;
+        if (firstSep < 0)
         {
-            header = Parse(value);
+            if (!HlcTimestamp.TryParse(value, out timestamp))
+                return false;
+
+            header = new HlcMessageHeader(timestamp);
             return true;
         }
-        catch
-        {
+
+        if (!HlcTimestamp.TryParse(span[..firstSep], out timestamp))
             return false;
+
+        span = span[(firstSep + 1)..];
+        var secondSep = span.IndexOf(';');
+
+        if (secondSep < 0)
+        {
+            if (!Guid.TryParseExact(span, "N", out var correlation))
+                return false;
+            header = new HlcMessageHeader(timestamp, correlation);
+            return true;
         }
+
+        if (!Guid.TryParseExact(span[..secondSep], "N", out var correlationId))
+            return false;
+        if (!Guid.TryParseExact(span[(secondSep + 1)..], "N", out var causationId))
+            return false;
+
+        header = new HlcMessageHeader(timestamp, correlationId, causationId);
+        return true;
     }
 }

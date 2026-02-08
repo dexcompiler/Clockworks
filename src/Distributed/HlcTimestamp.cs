@@ -194,4 +194,35 @@ public readonly record struct HlcTimestamp : IComparable<HlcTimestamp>, ICompara
             nodeId: ushort.Parse(s[(atIndex + 1)..])
         );
     }
+
+    /// <summary>
+    /// Tries to parse from string format "walltime.counter@node".
+    /// </summary>
+    public static bool TryParse(ReadOnlySpan<char> s, out HlcTimestamp result)
+    {
+        result = default;
+        if (s.IsEmpty)
+        {
+            result = new HlcTimestamp();
+            return true;
+        }
+
+        var atIndex = s.IndexOf('@');
+        if (atIndex <= 0)
+            return false;
+
+        var dotIndex = s[..atIndex].IndexOf('.');
+        if (dotIndex <= 0)
+            return false;
+
+        if (!long.TryParse(s[..dotIndex], out var wallTimeMs))
+            return false;
+        if (!ushort.TryParse(s.Slice(dotIndex + 1, atIndex - dotIndex - 1), out var counter))
+            return false;
+        if (!ushort.TryParse(s[(atIndex + 1)..], out var nodeId))
+            return false;
+
+        result = new HlcTimestamp(wallTimeMs, counter, nodeId);
+        return true;
+    }
 }

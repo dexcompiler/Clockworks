@@ -39,4 +39,31 @@ public sealed class HlcMessageHeaderTests
         Assert.Equal(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), parsed.CorrelationId);
         Assert.Equal(Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"), parsed.CausationId);
     }
+
+    [Fact]
+    public void TryParse_RoundTrips_TimestampOnly()
+    {
+        const string value = "1700000000000.0012@3";
+        Assert.True(HlcMessageHeader.TryParse(value, out var header));
+        Assert.Equal(new HlcTimestamp(1_700_000_000_000, counter: 12, nodeId: 3), header.Timestamp);
+        Assert.Null(header.CorrelationId);
+        Assert.Null(header.CausationId);
+    }
+
+    [Fact]
+    public void TryParse_RoundTrips_TimestampAndCorrelation()
+    {
+        const string value = "1700000000000.0012@3;aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        Assert.True(HlcMessageHeader.TryParse(value, out var header));
+        Assert.Equal(new HlcTimestamp(1_700_000_000_000, counter: 12, nodeId: 3), header.Timestamp);
+        Assert.Equal(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), header.CorrelationId);
+        Assert.Null(header.CausationId);
+    }
+
+    [Fact]
+    public void TryParse_ReturnsFalse_OnInvalidGuidAndTimestamp()
+    {
+        Assert.False(HlcMessageHeader.TryParse("1700000000000.0012@3;not-a-guid", out _));
+        Assert.False(HlcMessageHeader.TryParse("not-a-timestamp;aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", out _));
+    }
 }
