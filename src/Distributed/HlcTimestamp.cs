@@ -202,10 +202,7 @@ public readonly record struct HlcTimestamp : IComparable<HlcTimestamp>, ICompara
     {
         result = default;
         if (s.IsEmpty)
-        {
-            result = new HlcTimestamp();
-            return true;
-        }
+            return false;
 
         var atIndex = s.IndexOf('@');
         if (atIndex <= 0)
