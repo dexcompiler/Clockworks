@@ -69,3 +69,28 @@ let ``WriteTo and ReadFrom round-trip`` (clock: VectorClock) =
 let ``Increment moves clock forward`` (clock: VectorClock) (nodeId: uint16) =
     let incremented = clock.Increment(nodeId)
     incremented.Compare(clock) = VectorClockOrder.After
+
+/// Property: If a is before-or-equal b, Merge(a,b) = b (b is an upper bound)
+[<Property(Arbitrary = [| typeof<VectorClockArb> |])>]
+let ``Merge returns the upper bound when one input dominates`` (a: VectorClock) (b: VectorClock) =
+    match a.Compare(b) with
+    | VectorClockOrder.Before
+    | VectorClockOrder.Equal -> a.Merge(b) = b
+    | VectorClockOrder.After -> a.Merge(b) = a
+    | VectorClockOrder.Concurrent -> true
+    | _ -> true
+
+/// Property: Merge is monotone: merged clock is never before either input
+[<Property(Arbitrary = [| typeof<VectorClockArb> |])>]
+let ``Merge is monotone with respect to inputs`` (a: VectorClock) (b: VectorClock) =
+    let m = a.Merge(b)
+    let ra = m.Compare(a)
+    let rb = m.Compare(b)
+    (ra = VectorClockOrder.After || ra = VectorClockOrder.Equal)
+    && (rb = VectorClockOrder.After || rb = VectorClockOrder.Equal)
+
+/// Property: Increment only advances the chosen node; merging original with incremented equals incremented
+[<Property(Arbitrary = [| typeof<VectorClockArb> |])>]
+let ``Increment is stable under merge with original`` (clock: VectorClock) (nodeId: uint16) =
+    let inc = clock.Increment(nodeId)
+    clock.Merge(inc) = inc && inc.Merge(clock) = inc
