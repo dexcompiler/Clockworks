@@ -1,5 +1,6 @@
 using Clockworks.Abstractions;
 using Clockworks.Distributed;
+using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 
@@ -261,9 +262,13 @@ public sealed class HlcGuidFactory : IHlcGuidFactory, IDisposable
         lock (_lock)
         {
             var physicalTimeMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-            var maxTime = Math.Max(physicalTimeMs, Math.Max(_logicalTimeMs, remoteTimestampMs));
-            
-            if (maxTime == _logicalTimeMs)
+
+            var localTimeMs = _logicalTimeMs;
+            var maxTime = localTimeMs;
+            if (remoteTimestampMs > maxTime) maxTime = remoteTimestampMs;
+            if (physicalTimeMs > maxTime) maxTime = physicalTimeMs;
+
+            if (maxTime == localTimeMs)
             {
                 // Our logical time is already the max - just increment counter
                 _counter++;
@@ -342,21 +347,22 @@ public sealed class HlcGuidFactory : IHlcGuidFactory, IDisposable
         Span<byte> bytes = stackalloc byte[16];
         
         // Bytes 0-5: 48-bit logical timestamp (big-endian)
-        bytes[0] = (byte)(timestamp.WallTimeMs >> 40);
-        bytes[1] = (byte)(timestamp.WallTimeMs >> 32);
-        bytes[2] = (byte)(timestamp.WallTimeMs >> 24);
-        bytes[3] = (byte)(timestamp.WallTimeMs >> 16);
-        bytes[4] = (byte)(timestamp.WallTimeMs >> 8);
-        bytes[5] = (byte)timestamp.WallTimeMs;
+        var wallTime = (ulong)timestamp.WallTimeMs;
+        bytes[0] = (byte)(wallTime >> 40);
+        bytes[1] = (byte)(wallTime >> 32);
+        bytes[2] = (byte)(wallTime >> 24);
+        bytes[3] = (byte)(wallTime >> 16);
+        bytes[4] = (byte)(wallTime >> 8);
+        bytes[5] = (byte)wallTime;
 
         // Bytes 6-7: version (4 bits) + counter (12 bits)
-        bytes[6] = (byte)(Version7 | ((timestamp.Counter >> 8) & VersionMask));
-        bytes[7] = (byte)timestamp.Counter;
+        BinaryPrimitives.WriteUInt16BigEndian(bytes.Slice(6, 2), timestamp.Counter);
+        bytes[6] = (byte)(Version7 | (bytes[6] & VersionMask));
 
         // Bytes 8-9: variant (2 bits) + node ID high bits (14 bits across bytes 8-9)
         // We encode node ID in the "random" portion for correlation
-        bytes[8] = (byte)(VariantRfc4122 | ((timestamp.NodeId >> 8) & VariantMask));
-        bytes[9] = (byte)timestamp.NodeId;
+        BinaryPrimitives.WriteUInt16BigEndian(bytes.Slice(8, 2), timestamp.NodeId);
+        bytes[8] = (byte)(VariantRfc4122 | (bytes[8] & VariantMask));
 
         // Bytes 10-15: random (48 bits)
         randomBytes.Slice(0, 6).CopyTo(bytes.Slice(10, 6));
