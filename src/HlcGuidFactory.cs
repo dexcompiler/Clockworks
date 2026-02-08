@@ -66,8 +66,9 @@ public sealed class HlcGuidFactory : IHlcGuidFactory, IDisposable
     private ushort _counter;
     
     // Pre-allocated random buffer (protected by _lock since we need lock anyway)
-    private readonly byte[] _randomBuffer = new byte[64];
-    private int _randomPosition = 64;
+    // Sized to reduce RNG refill frequency in high-throughput scenarios.
+    private readonly byte[] _randomBuffer = new byte[256];
+    private int _randomPosition = 256;
     
     // UUID constants
     private const byte Version7 = 0x70;
@@ -188,16 +189,36 @@ public sealed class HlcGuidFactory : IHlcGuidFactory, IDisposable
         {
             var physicalTimeMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
 
-            // Physical time participates in max selection but has no counter/node information.
-            // We treat it as (physicalTimeMs, 0, 0) for ordering purposes.
-            var physical = new HlcTimestamp(physicalTimeMs, counter: 0, nodeId: 0);
-            var local = new HlcTimestamp(_logicalTimeMs, _counter, _nodeId);
+            // Determine which source is the maximum in the total order:
+            // local = (_logicalTimeMs, _counter, _nodeId)
+            // remote = (remote.WallTimeMs, remote.Counter, remote.NodeId)
+            // physical = (physicalTimeMs, 0, 0)
+            var localWall = _logicalTimeMs;
+            var localCounter = _counter;
+            var localNode = _nodeId;
 
-            var max = local;
-            if (remoteTimestamp > max) max = remoteTimestamp;
-            if (physical > max) max = physical;
+            var maxIsLocal = true;
+            var maxIsRemote = false;
 
-            if (max.WallTimeMs == local.WallTimeMs && max.Counter == local.Counter && max.NodeId == local.NodeId)
+            // Compare remote vs local
+            if (remoteTimestamp.WallTimeMs > localWall ||
+                (remoteTimestamp.WallTimeMs == localWall &&
+                 (remoteTimestamp.Counter > localCounter ||
+                  (remoteTimestamp.Counter == localCounter && remoteTimestamp.NodeId > localNode))))
+            {
+                maxIsLocal = false;
+                maxIsRemote = true;
+            }
+
+            // Compare physical vs current max (physical has counter/node of 0)
+            var maxWall = maxIsLocal ? localWall : remoteTimestamp.WallTimeMs;
+            if (physicalTimeMs > maxWall)
+            {
+                maxIsLocal = false;
+                maxIsRemote = false;
+            }
+
+            if (maxIsLocal)
             {
                 // Local time is already the max (or tied with max) - just increment counter.
                 _counter++;
@@ -207,7 +228,7 @@ public sealed class HlcGuidFactory : IHlcGuidFactory, IDisposable
                     _counter = 0;
                 }
             }
-            else if (max.WallTimeMs == remoteTimestamp.WallTimeMs && max.Counter == remoteTimestamp.Counter && max.NodeId == remoteTimestamp.NodeId)
+            else if (maxIsRemote)
             {
                 // Remote timestamp is the max - adopt its wall time and advance counter beyond it.
                 _logicalTimeMs = remoteTimestamp.WallTimeMs;
