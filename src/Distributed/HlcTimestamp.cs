@@ -1,4 +1,6 @@
-﻿namespace Clockworks.Distributed;
+﻿using System.Buffers.Binary;
+
+namespace Clockworks.Distributed;
 
 /// <summary>
 /// Represents a Hybrid Logical Clock timestamp.
@@ -57,9 +59,12 @@ public readonly record struct HlcTimestamp : IComparable<HlcTimestamp>, ICompara
         // 48 bits for timestamp (good until year 10889)
         // 12 bits for counter (0-4095)
         // 4 bits for node ID (0-15, use for small clusters)
-        return (WallTimeMs << 16)
-            | ((long)((ushort)(Counter & 0x0FFF)) << 4)
-            | (long)(NodeId & 0x000F);
+        ulong wall = (ulong)WallTimeMs;
+        ulong counter = (ulong)(Counter & 0x0FFF);
+        ulong node = (ulong)(NodeId & 0x000F);
+
+        ulong packed = (wall << 16) | (counter << 4) | node;
+        return unchecked((long)packed);
     }
 
     /// <summary>
@@ -83,16 +88,16 @@ public readonly record struct HlcTimestamp : IComparable<HlcTimestamp>, ICompara
             throw new ArgumentException("Destination must be at least 10 bytes", nameof(destination));
 
         // Big-endian for lexicographic sorting
-        destination[0] = (byte)(WallTimeMs >> 40);
-        destination[1] = (byte)(WallTimeMs >> 32);
-        destination[2] = (byte)(WallTimeMs >> 24);
-        destination[3] = (byte)(WallTimeMs >> 16);
-        destination[4] = (byte)(WallTimeMs >> 8);
-        destination[5] = (byte)WallTimeMs;
-        destination[6] = (byte)(Counter >> 8);
-        destination[7] = (byte)Counter; 
-        destination[8] = (byte)(NodeId >> 8);
-        destination[9] = (byte)NodeId;
+        // Use lower 48 bits of WallTimeMs for stable 6-byte encoding.
+        var wallTime = (ulong)WallTimeMs;
+        destination[0] = (byte)(wallTime >> 40);
+        destination[1] = (byte)(wallTime >> 32);
+        destination[2] = (byte)(wallTime >> 24);
+        destination[3] = (byte)(wallTime >> 16);
+        destination[4] = (byte)(wallTime >> 8);
+        destination[5] = (byte)wallTime;
+        BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(6, 2), Counter);
+        BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(8, 2), NodeId);
     }
 
     /// <summary>
@@ -103,11 +108,12 @@ public readonly record struct HlcTimestamp : IComparable<HlcTimestamp>, ICompara
         if (source.Length < 10)
             throw new ArgumentException("Source must be at least 10 bytes", nameof(source));
 
+        // 6-byte big-endian wall time (lower 48-bits)
         long wallTime = ((long)source[0] << 40) | ((long)source[1] << 32) |
                         ((long)source[2] << 24) | ((long)source[3] << 16) |
                         ((long)source[4] << 8) | source[5];
-        ushort counter = (ushort)((source[6] << 8) | source[7]);
-        ushort nodeId = (ushort)((source[8] << 8) | source[9]);
+        ushort counter = BinaryPrimitives.ReadUInt16BigEndian(source.Slice(6, 2));
+        ushort nodeId = BinaryPrimitives.ReadUInt16BigEndian(source.Slice(8, 2));
 
         return new HlcTimestamp(wallTime, counter, nodeId);
     }
@@ -166,13 +172,54 @@ public readonly record struct HlcTimestamp : IComparable<HlcTimestamp>, ICompara
     /// </summary>
     public static HlcTimestamp Parse(string s)
     {
-        var atIndex = s.LastIndexOf('@');
-        var dotIndex = s.LastIndexOf('.', atIndex > 0 ? atIndex : s.Length - 1);
+        return Parse(s.AsSpan());
+    }
+
+    /// <summary>
+    /// Parse from string format "walltime.counter@node".
+    /// </summary>
+    public static HlcTimestamp Parse(ReadOnlySpan<char> s)
+    {
+        var atIndex = s.IndexOf('@');
+        if (atIndex <= 0)
+            throw new FormatException("Invalid HLC timestamp format.");
+
+        var dotIndex = s[..atIndex].IndexOf('.');
+        if (dotIndex <= 0)
+            throw new FormatException("Invalid HLC timestamp format.");
 
         return new HlcTimestamp(
-            wallTimeMs: long.Parse(s.AsSpan(0, dotIndex)),
-            counter: ushort.Parse(s.AsSpan(dotIndex + 1, atIndex - dotIndex - 1)),
-            nodeId: ushort.Parse(s.AsSpan(atIndex + 1))
+            wallTimeMs: long.Parse(s[..dotIndex]),
+            counter: ushort.Parse(s.Slice(dotIndex + 1, atIndex - dotIndex - 1)),
+            nodeId: ushort.Parse(s[(atIndex + 1)..])
         );
+    }
+
+    /// <summary>
+    /// Tries to parse from string format "walltime.counter@node".
+    /// </summary>
+    public static bool TryParse(ReadOnlySpan<char> s, out HlcTimestamp result)
+    {
+        result = default;
+        if (s.IsEmpty)
+            return false;
+
+        var atIndex = s.IndexOf('@');
+        if (atIndex <= 0)
+            return false;
+
+        var dotIndex = s[..atIndex].IndexOf('.');
+        if (dotIndex <= 0)
+            return false;
+
+        if (!long.TryParse(s[..dotIndex], out var wallTimeMs))
+            return false;
+        if (!ushort.TryParse(s.Slice(dotIndex + 1, atIndex - dotIndex - 1), out var counter))
+            return false;
+        if (!ushort.TryParse(s[(atIndex + 1)..], out var nodeId))
+            return false;
+
+        result = new HlcTimestamp(wallTimeMs, counter, nodeId);
+        return true;
     }
 }

@@ -1,5 +1,6 @@
 using Clockworks.Abstractions;
 using Clockworks.Distributed;
+using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 
@@ -66,8 +67,9 @@ public sealed class HlcGuidFactory : IHlcGuidFactory, IDisposable
     private ushort _counter;
     
     // Pre-allocated random buffer (protected by _lock since we need lock anyway)
-    private readonly byte[] _randomBuffer = new byte[64];
-    private int _randomPosition = 64;
+    // Sized to reduce RNG refill frequency in high-throughput scenarios.
+    private readonly byte[] _randomBuffer = new byte[256];
+    private int _randomPosition = 256;
     
     // UUID constants
     private const byte Version7 = 0x70;
@@ -188,16 +190,36 @@ public sealed class HlcGuidFactory : IHlcGuidFactory, IDisposable
         {
             var physicalTimeMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
 
-            // Physical time participates in max selection but has no counter/node information.
-            // We treat it as (physicalTimeMs, 0, 0) for ordering purposes.
-            var physical = new HlcTimestamp(physicalTimeMs, counter: 0, nodeId: 0);
-            var local = new HlcTimestamp(_logicalTimeMs, _counter, _nodeId);
+            // Determine which source is the maximum in the total order:
+            // local = (_logicalTimeMs, _counter, _nodeId)
+            // remote = (remote.WallTimeMs, remote.Counter, remote.NodeId)
+            // physical = (physicalTimeMs, 0, 0)
+            var localWall = _logicalTimeMs;
+            var localCounter = _counter;
+            var localNode = _nodeId;
 
-            var max = local;
-            if (remoteTimestamp > max) max = remoteTimestamp;
-            if (physical > max) max = physical;
+            var maxIsLocal = true;
+            var maxIsRemote = false;
 
-            if (max.WallTimeMs == local.WallTimeMs && max.Counter == local.Counter && max.NodeId == local.NodeId)
+            // Compare remote vs local
+            if (remoteTimestamp.WallTimeMs > localWall ||
+                (remoteTimestamp.WallTimeMs == localWall &&
+                 (remoteTimestamp.Counter > localCounter ||
+                  (remoteTimestamp.Counter == localCounter && remoteTimestamp.NodeId > localNode))))
+            {
+                maxIsLocal = false;
+                maxIsRemote = true;
+            }
+
+            // Compare physical vs current max (physical has counter/node of 0)
+            var maxWall = maxIsLocal ? localWall : remoteTimestamp.WallTimeMs;
+            if (physicalTimeMs > maxWall)
+            {
+                maxIsLocal = false;
+                maxIsRemote = false;
+            }
+
+            if (maxIsLocal)
             {
                 // Local time is already the max (or tied with max) - just increment counter.
                 _counter++;
@@ -207,7 +229,7 @@ public sealed class HlcGuidFactory : IHlcGuidFactory, IDisposable
                     _counter = 0;
                 }
             }
-            else if (max.WallTimeMs == remoteTimestamp.WallTimeMs && max.Counter == remoteTimestamp.Counter && max.NodeId == remoteTimestamp.NodeId)
+            else if (maxIsRemote)
             {
                 // Remote timestamp is the max - adopt its wall time and advance counter beyond it.
                 _logicalTimeMs = remoteTimestamp.WallTimeMs;
@@ -240,9 +262,13 @@ public sealed class HlcGuidFactory : IHlcGuidFactory, IDisposable
         lock (_lock)
         {
             var physicalTimeMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-            var maxTime = Math.Max(physicalTimeMs, Math.Max(_logicalTimeMs, remoteTimestampMs));
-            
-            if (maxTime == _logicalTimeMs)
+
+            var localTimeMs = _logicalTimeMs;
+            var maxTime = localTimeMs;
+            if (remoteTimestampMs > maxTime) maxTime = remoteTimestampMs;
+            if (physicalTimeMs > maxTime) maxTime = physicalTimeMs;
+
+            if (maxTime == localTimeMs)
             {
                 // Our logical time is already the max - just increment counter
                 _counter++;
@@ -321,24 +347,25 @@ public sealed class HlcGuidFactory : IHlcGuidFactory, IDisposable
         Span<byte> bytes = stackalloc byte[16];
         
         // Bytes 0-5: 48-bit logical timestamp (big-endian)
-        bytes[0] = (byte)(timestamp.WallTimeMs >> 40);
-        bytes[1] = (byte)(timestamp.WallTimeMs >> 32);
-        bytes[2] = (byte)(timestamp.WallTimeMs >> 24);
-        bytes[3] = (byte)(timestamp.WallTimeMs >> 16);
-        bytes[4] = (byte)(timestamp.WallTimeMs >> 8);
-        bytes[5] = (byte)timestamp.WallTimeMs;
+        var wallTime = (ulong)timestamp.WallTimeMs;
+        bytes[0] = (byte)(wallTime >> 40);
+        bytes[1] = (byte)(wallTime >> 32);
+        bytes[2] = (byte)(wallTime >> 24);
+        bytes[3] = (byte)(wallTime >> 16);
+        bytes[4] = (byte)(wallTime >> 8);
+        bytes[5] = (byte)wallTime;
 
         // Bytes 6-7: version (4 bits) + counter (12 bits)
-        bytes[6] = (byte)(Version7 | ((timestamp.Counter >> 8) & VersionMask));
-        bytes[7] = (byte)timestamp.Counter;
+        BinaryPrimitives.WriteUInt16BigEndian(bytes.Slice(6, 2), timestamp.Counter);
+        bytes[6] = (byte)(Version7 | (bytes[6] & VersionMask));
 
         // Bytes 8-9: variant (2 bits) + node ID high bits (14 bits across bytes 8-9)
         // We encode node ID in the "random" portion for correlation
-        bytes[8] = (byte)(VariantRfc4122 | ((timestamp.NodeId >> 8) & VariantMask));
-        bytes[9] = (byte)timestamp.NodeId;
+        BinaryPrimitives.WriteUInt16BigEndian(bytes.Slice(8, 2), timestamp.NodeId);
+        bytes[8] = (byte)(VariantRfc4122 | (bytes[8] & VariantMask));
 
         // Bytes 10-15: random (48 bits)
-        randomBytes.Slice(0, 6).CopyTo(bytes.Slice(10, 6));
+        randomBytes[..6].CopyTo(bytes.Slice(10, 6));
 
         return new Guid(bytes, bigEndian: true);
     }
