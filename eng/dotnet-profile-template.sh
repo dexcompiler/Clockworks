@@ -18,13 +18,15 @@ if [ -z "${DOTNET_ROOT:-}" ]; then
 fi
 
 # Idempotent PATH configuration - only add if not already present
-_add_to_path() {
-  case ":$PATH:" in
-    *:"$1":*) ;;
-    *) export PATH="$1:$PATH" ;;
-  esac
-}
+# Define function only if it doesn't exist (safe for multiple sourcings)
+if ! declare -F _add_to_path >/dev/null 2>&1; then
+  _add_to_path() {
+    case ":$PATH:" in
+      *:"$1":*) ;;
+      *) export PATH="$1:$PATH" ;;
+    esac
+  }
+fi
 
 _add_to_path "$DOTNET_ROOT"
 _add_to_path "$HOME/.dotnet/tools"
-unset -f _add_to_path

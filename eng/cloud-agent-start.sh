@@ -38,8 +38,12 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   cd "$(git rev-parse --show-toplevel)"
 
   if [[ -n "$dotnet_cmd" ]]; then
-    # Optional warm-up; show stderr if restore fails
-    "$dotnet_cmd" restore 2>&1 || echo "[start] warning: dotnet restore failed (check output above)"
+    # Optional warm-up; capture output and show on failure
+    if ! restore_output=$("$dotnet_cmd" restore 2>&1); then
+      restore_status=$?
+      echo "$restore_output"
+      echo "[start] warning: dotnet restore failed (exit code $restore_status)"
+    fi
   else
     echo "[start] warning: skipping dotnet restore (dotnet not found)"
   fi
