@@ -110,6 +110,9 @@ public readonly struct VectorClock : IEquatable<VectorClock>
         else
         {
             // Node doesn't exist, insert it maintaining sort order
+            if (_nodeIds.Length >= MaxEntries)
+                throw new InvalidOperationException($"Cannot increment: vector clock at max capacity ({MaxEntries})");
+            
             var insertIndex = ~index;
             var newNodeIds = new ushort[_nodeIds.Length + 1];
             var newCounters = new ulong[_counters.Length + 1];
@@ -323,6 +326,7 @@ public readonly struct VectorClock : IEquatable<VectorClock>
 
     /// <summary>
     /// Reads a vector clock from its binary representation.
+    /// Automatically deduplicates entries by taking the maximum counter value for duplicate node IDs.
     /// </summary>
     public static VectorClock ReadFrom(ReadOnlySpan<byte> source)
     {
@@ -330,7 +334,7 @@ public readonly struct VectorClock : IEquatable<VectorClock>
             throw new ArgumentException("Source must be at least 4 bytes", nameof(source));
 
         var count = BinaryPrimitives.ReadUInt32BigEndian(source);
-        if (count > MaxEntries)
+        if (count > MaxEntries || count > int.MaxValue)
             throw new ArgumentOutOfRangeException(nameof(source), $"Vector clock entry count {count} exceeds max {MaxEntries}.");
 
         var countValue = (int)count;
