@@ -1,7 +1,9 @@
+using Clockworks;
 using Clockworks.Distributed;
 using Clockworks.Instrumentation;
 using Clockworks.Demo.Infrastructure;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using static System.Console;
 
 namespace Clockworks.Demo.Demos;
@@ -135,11 +137,13 @@ internal static class DistributedAtLeastOnceCausalityShowcase
     {
         private readonly SimulatedNetwork _network;
         private readonly TimeProvider _tp;
-        private readonly ConcurrentDictionary<Guid, byte> _inbox = new();
+        private readonly UuidV7Factory _uuid;
+        private readonly BoundedInboxDedupe _inbox;
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _acks = new();
         private readonly ConcurrentDictionary<string, Timeouts.TimeoutHandle> _retries = new();
         private readonly ConcurrentDictionary<string, int> _attempts = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, Guid> _correlationIds = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<LogicalMessageKey, MessageTemplate> _templates = new();
 
         public string Name { get; }
         public HlcCoordinator Hlc { get; }
@@ -157,6 +161,8 @@ internal static class DistributedAtLeastOnceCausalityShowcase
             Name = name;
             _network = network;
             _tp = tp;
+            _uuid = new UuidV7Factory(tp, overflowBehavior: CounterOverflowBehavior.Auto);
+            _inbox = new BoundedInboxDedupe(capacity: 8192);
             var factory = new HlcGuidFactory(tp, nodeId);
             Hlc = new HlcCoordinator(factory);
             Vector = new VectorClockCoordinator(nodeId);
@@ -166,41 +172,26 @@ internal static class DistributedAtLeastOnceCausalityShowcase
 
         public void StartNewOrder(string orderId)
         {
-            var correlationId = Guid.CreateVersion7();
             Vector.NewLocalEvent();
             var vc = Vector.BeforeSend();
             var ts = Hlc.BeforeSend();
+            var correlationId = _uuid.NewGuid();
 
             _acks[orderId] = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
             _attempts[orderId] = 1;
             _correlationIds[orderId] = correlationId;
 
-            Send(new Message(
-                Kind: MessageKind.PlaceOrder,
-                OrderId: orderId,
-                From: Name,
-                To: "payments",
-                CorrelationId: correlationId,
-                Hlc: ts,
-                VectorClock: vc,
-                Attempt: 1));
-
-            Send(new Message(
-                Kind: MessageKind.PlaceOrder,
-                OrderId: orderId,
-                From: Name,
-                To: "inventory",
-                CorrelationId: correlationId,
-                Hlc: ts,
-                VectorClock: vc,
-                Attempt: 1));
+            var toPayments = GetOrCreateTemplate(new LogicalMessageKey(MessageKind.PlaceOrder, orderId, "payments"), correlationId, ts, vc);
+            var toInventory = GetOrCreateTemplate(new LogicalMessageKey(MessageKind.PlaceOrder, orderId, "inventory"), correlationId, ts, vc);
+            Send(toPayments.ToMessage(_uuid.NewGuid(), attempt: 1));
+            Send(toInventory.ToMessage(_uuid.NewGuid(), attempt: 1));
 
             ScheduleRetry(orderId, attempt: 1);
         }
 
         public void OnReceive(Message msg)
         {
-            if (!_inbox.TryAdd(msg.MessageId, 0))
+            if (!_inbox.TryMarkSeen(msg.MessageId))
             {
                 Interlocked.Increment(ref _deduped);
                 return;
@@ -232,6 +223,9 @@ internal static class DistributedAtLeastOnceCausalityShowcase
             var ts = Hlc.BeforeSend();
 
             Send(new Message(
+                MessageId: _uuid.NewGuid(),
+                EventId: _uuid.NewGuid(),
+                TransmissionId: _uuid.NewGuid(),
                 Kind: MessageKind.Ack,
                 OrderId: msg.OrderId,
                 From: Name,
@@ -313,35 +307,47 @@ internal static class DistributedAtLeastOnceCausalityShowcase
                 return;
             }
 
-            Vector.NewLocalEvent();
-            var vc = Vector.BeforeSend();
-            var ts = Hlc.BeforeSend();
-            
             // Preserve original correlation ID for distributed tracing
-            var correlationId = _correlationIds.TryGetValue(orderId, out var id) ? id : Guid.CreateVersion7();
+            var correlationId = _correlationIds.TryGetValue(orderId, out var id) ? id : _uuid.NewGuid();
 
-            Send(new Message(
-                Kind: MessageKind.PlaceOrder,
-                OrderId: orderId,
-                From: Name,
-                To: "payments",
-                CorrelationId: correlationId,
-                Hlc: ts,
-                VectorClock: vc,
-                Attempt: nextAttempt));
-
-            Send(new Message(
-                Kind: MessageKind.PlaceOrder,
-                OrderId: orderId,
-                From: Name,
-                To: "inventory",
-                CorrelationId: correlationId,
-                Hlc: ts,
-                VectorClock: vc,
-                Attempt: nextAttempt));
+            // Retries are resends of the same logical messages (stable MessageId/EventId),
+            // but each send attempt gets a fresh TransmissionId.
+            var toPayments = GetOrCreateTemplate(new LogicalMessageKey(MessageKind.PlaceOrder, orderId, "payments"), correlationId, hlc: default, vc: default);
+            var toInventory = GetOrCreateTemplate(new LogicalMessageKey(MessageKind.PlaceOrder, orderId, "inventory"), correlationId, hlc: default, vc: default);
+            Send(toPayments.ToMessage(_uuid.NewGuid(), attempt: nextAttempt));
+            Send(toInventory.ToMessage(_uuid.NewGuid(), attempt: nextAttempt));
 
             CleanupRetry(orderId);
             ScheduleRetry(orderId, nextAttempt);
+        }
+
+        private MessageTemplate GetOrCreateTemplate(LogicalMessageKey key, Guid correlationId, HlcTimestamp hlc, VectorClock vc)
+        {
+            // For retries we may be called with default timestamps; in that case reuse the original template.
+            if (_templates.TryGetValue(key, out var existing))
+                return existing;
+
+            if (hlc == default || vc.Equals(default(VectorClock)))
+            {
+                // This should not happen for normal flow (templates are created during StartNewOrder),
+                // but if it does, synthesize a reasonable envelope.
+                Vector.NewLocalEvent();
+                vc = Vector.BeforeSend();
+                hlc = Hlc.BeforeSend();
+            }
+
+            var template = new MessageTemplate(
+                MessageId: _uuid.NewGuid(),
+                EventId: _uuid.NewGuid(),
+                Kind: key.Kind,
+                OrderId: key.OrderId,
+                From: Name,
+                To: key.To,
+                CorrelationId: correlationId,
+                Hlc: hlc,
+                VectorClock: vc);
+
+            return _templates.GetOrAdd(key, template);
         }
 
         private void CleanupRetry(string orderId)
@@ -362,6 +368,9 @@ internal static class DistributedAtLeastOnceCausalityShowcase
     }
 
     private sealed record Message(
+        Guid MessageId,
+        Guid EventId,
+        Guid TransmissionId,
         MessageKind Kind,
         string OrderId,
         string From,
@@ -369,10 +378,65 @@ internal static class DistributedAtLeastOnceCausalityShowcase
         Guid CorrelationId,
         HlcTimestamp Hlc,
         VectorClock VectorClock,
-        int Attempt)
+        int Attempt);
+
+    private readonly record struct LogicalMessageKey(MessageKind Kind, string OrderId, string To);
+
+    private sealed record MessageTemplate(
+        Guid MessageId,
+        Guid EventId,
+        MessageKind Kind,
+        string OrderId,
+        string From,
+        string To,
+        Guid CorrelationId,
+        HlcTimestamp Hlc,
+        VectorClock VectorClock)
     {
-        public Guid MessageId { get; init; } = Guid.CreateVersion7();
-        public Guid EventId { get; init; } = Guid.CreateVersion7();
+        public Message ToMessage(Guid transmissionId, int attempt) => new(
+            MessageId: MessageId,
+            EventId: EventId,
+            TransmissionId: transmissionId,
+            Kind: Kind,
+            OrderId: OrderId,
+            From: From,
+            To: To,
+            CorrelationId: CorrelationId,
+            Hlc: Hlc,
+            VectorClock: VectorClock,
+            Attempt: attempt);
+    }
+
+    /// <summary>
+    /// Bounded FIFO dedupe structure for inbox idempotency.
+    /// </summary>
+    /// <remarks>
+    /// This demo previously used an unbounded set; bounding keeps long simulations from growing without limit while still
+    /// demonstrating at-least-once idempotency over a realistic rolling window.
+    /// </remarks>
+    private sealed class BoundedInboxDedupe(int capacity)
+    {
+        private readonly int _capacity = capacity > 0 ? capacity : throw new ArgumentOutOfRangeException(nameof(capacity));
+        private readonly Lock _lock = new();
+        private readonly HashSet<Guid> _seen = new();
+        private readonly Queue<Guid> _fifo = new();
+
+        public bool TryMarkSeen(Guid messageId)
+        {
+            lock (_lock)
+            {
+                if (!_seen.Add(messageId))
+                    return false;
+
+                _fifo.Enqueue(messageId);
+                while (_fifo.Count > _capacity)
+                {
+                    var old = _fifo.Dequeue();
+                    _seen.Remove(old);
+                }
+                return true;
+            }
+        }
     }
 
     private sealed class SimulationOptions
