@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # shellcheck shell=bash
 # Profile script template for cloud agent environments
 # This file is sourced, not executed directly
@@ -9,8 +10,8 @@ export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
 # Keep NuGet packages in a stable path (fast incremental restores)
 export NUGET_PACKAGES="$HOME/.nuget/packages"
 
-if [ -z "${DOTNET_ROOT:-}" ]; then
-  if [ -x "$HOME/.dotnet/dotnet" ]; then
+if [[ -z "${DOTNET_ROOT:-}" ]]; then
+  if [[ -x "$HOME/.dotnet/dotnet" ]]; then
     export DOTNET_ROOT="$HOME/.dotnet"
   else
     export DOTNET_ROOT="/usr/share/dotnet"
