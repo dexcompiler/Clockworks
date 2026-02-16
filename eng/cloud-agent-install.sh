@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Source common functions
+# shellcheck disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+
 echo "[install] OS deps + .NET sanity"
 
 sudo apt-get update -y
@@ -9,32 +13,24 @@ sudo apt-get install -y --no-install-recommends \
   build-essential clang lld cmake pkg-config \
   zlib1g-dev libssl-dev libicu-dev
 
-# Write profile script with deterministic permissions
-tmp="$(mktemp)"
-cat >"$tmp" <<'EOF'
-export DOTNET_CLI_TELEMETRY_OPTOUT=1
-export DOTNET_NOLOGO=1
-export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
-
-# Keep NuGet packages in a stable path (fast incremental restores)
-export NUGET_PACKAGES="$HOME/.nuget/packages"
-
-if [ -z "${DOTNET_ROOT:-}" ]; then
-  if [ -x "$HOME/.dotnet/dotnet" ]; then
-    export DOTNET_ROOT="$HOME/.dotnet"
-  else
-    export DOTNET_ROOT="/usr/share/dotnet"
-  fi
+# Install .NET if missing (robust across images)
+if ! command -v dotnet >/dev/null 2>&1 && [[ ! -x "$HOME/.dotnet/dotnet" ]]; then
+  echo "[install] Installing .NET SDK via dotnet-install.sh"
+  curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+  chmod +x /tmp/dotnet-install.sh
+  /tmp/dotnet-install.sh --channel 10.0 --install-dir "$HOME/.dotnet"
 fi
 
-export PATH="$DOTNET_ROOT:$PATH:$HOME/.dotnet/tools"
-EOF
+# Write profile script with deterministic permissions using unified template
+script_dir="$(dirname "${BASH_SOURCE[0]}")"
+sudo install -m 0644 "$script_dir/dotnet-profile-template.sh" /etc/profile.d/dotnet-cloud-agent.sh
 
-sudo install -m 0644 "$tmp" /etc/profile.d/dotnet-cloud-agent.sh
-rm -f "$tmp"
+# Persist for interactive shells (do this once, not inside profile.d)
+if ! grep -q 'dotnet-cloud-agent.sh' "$HOME/.bashrc" 2>/dev/null; then
+  echo 'if [ -r /etc/profile.d/dotnet-cloud-agent.sh ]; then . /etc/profile.d/dotnet-cloud-agent.sh; fi' >> "$HOME/.bashrc"
+fi
 
 # Apply vars for this script run
-# (If your environment is unusually locked down, -r protects you from set -e exits)
 if [[ -r /etc/profile.d/dotnet-cloud-agent.sh ]]; then
   # shellcheck disable=SC1091
   source /etc/profile.d/dotnet-cloud-agent.sh
@@ -42,14 +38,8 @@ else
   echo "[install] Warning: /etc/profile.d/dotnet-cloud-agent.sh is not readable; continuing"
 fi
 
-dotnet_cmd=""
-if command -v dotnet >/dev/null 2>&1; then
-  dotnet_cmd="dotnet"
-elif [[ -x "$HOME/.dotnet/dotnet" ]]; then
-  dotnet_cmd="$HOME/.dotnet/dotnet"
-elif [[ -x "/usr/share/dotnet/dotnet" ]]; then
-  dotnet_cmd="/usr/share/dotnet/dotnet"
-fi
+# Resolve dotnet command using common function
+dotnet_cmd="$(resolve_dotnet)"
 
 if [[ -n "$dotnet_cmd" ]]; then
   "$dotnet_cmd" --version
@@ -73,8 +63,6 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     fi
 
     "$dotnet_cmd" workload restore || true
-
-    # Prime NuGet cache
     "$dotnet_cmd" restore
   else
     echo "[install] Warning: dotnet not available; skipping restore"

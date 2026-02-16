@@ -1,64 +1,52 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Source common functions
+# shellcheck disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+
 dotnet_profile="/etc/profile.d/dotnet-cloud-agent.sh"
-if [ ! -f "$dotnet_profile" ]; then
-  if command -v sudo >/dev/null 2>&1; then
-    tmp="$(mktemp)"
-    cat >"$tmp" <<'EOF'
-export DOTNET_CLI_TELEMETRY_OPTOUT=1
-export DOTNET_NOLOGO=1
-export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
-export NUGET_PACKAGES="$HOME/.nuget/packages"
 
-if [ -z "${DOTNET_ROOT:-}" ]; then
-  if [ -x "$HOME/.dotnet/dotnet" ]; then
-    export DOTNET_ROOT="$HOME/.dotnet"
+# Ensure profile exists if possible (best-effort)
+if [[ ! -f "$dotnet_profile" ]]; then
+  if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    script_dir="$(dirname "${BASH_SOURCE[0]}")"
+    sudo install -m 0644 "$script_dir/dotnet-profile-template.sh" "$dotnet_profile"
   else
-    export DOTNET_ROOT="/usr/share/dotnet"
+    echo "[start] warning: missing $dotnet_profile and sudo is unavailable/non-interactive"
   fi
 fi
 
-export PATH="$DOTNET_ROOT:$PATH:$HOME/.dotnet/tools"
-EOF
-    sudo install -m 0644 "$tmp" "$dotnet_profile"
-    rm -f "$tmp"
-  else
-    echo "[start] warning: missing $dotnet_profile and sudo is unavailable"
-  fi
-fi
-
-source "$dotnet_profile" || true
-
-if ! command -v dotnet >/dev/null 2>&1; then
-  if [ -x "$HOME/.dotnet/dotnet" ]; then
-    export DOTNET_ROOT="$HOME/.dotnet"
-    export PATH="$DOTNET_ROOT:$PATH:$HOME/.dotnet/tools"
-  elif [ -x "/usr/share/dotnet/dotnet" ]; then
-    export DOTNET_ROOT="/usr/share/dotnet"
-    export PATH="$DOTNET_ROOT:$PATH:$HOME/.dotnet/tools"
-  fi
-fi
-
-if command -v dotnet >/dev/null 2>&1; then
-  echo "[start] dotnet: $(dotnet --version)"
+# Source profile if readable (avoid set -e footguns)
+if [[ -r "$dotnet_profile" ]]; then
+  # shellcheck disable=SC1090
+  source "$dotnet_profile"
 else
-  echo "[start] warning: dotnet not found on PATH"
+  echo "[start] warning: $dotnet_profile not readable; continuing"
+fi
+
+# Resolve dotnet command using common function
+dotnet_cmd="$(resolve_dotnet)"
+
+if [[ -n "$dotnet_cmd" ]]; then
+  echo "[start] dotnet: $("$dotnet_cmd" --version)"
+else
+  echo "[start] warning: dotnet not found"
 fi
 
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   cd "$(git rev-parse --show-toplevel)"
 
-  # Optional: quick restore if you want “always ready”
-  # (If you find this slows startup too much, remove it.)
-  if command -v dotnet >/dev/null 2>&1; then
-    dotnet restore >/dev/null
+  if [[ -n "$dotnet_cmd" ]]; then
+    # Optional warm-up; capture output and show on failure
+    if ! restore_output=$("$dotnet_cmd" restore 2>&1); then
+      restore_status=$?
+      echo "$restore_output"
+      echo "[start] warning: dotnet restore failed (exit code $restore_status)"
+    fi
   else
     echo "[start] warning: skipping dotnet restore (dotnet not found)"
   fi
-
-  # Optional: build warm-up (I usually avoid this on start; do it only if you like)
-  # dotnet build -c Release -v minimal >/dev/null
 fi
 
 echo "[start] ready"
