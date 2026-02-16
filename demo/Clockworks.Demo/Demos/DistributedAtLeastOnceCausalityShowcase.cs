@@ -135,6 +135,9 @@ internal static class DistributedAtLeastOnceCausalityShowcase
 
     private sealed class Node
     {
+        private const string PaymentsNodeName = "payments";
+        private const string InventoryNodeName = "inventory";
+        
         private readonly SimulatedNetwork _network;
         private readonly TimeProvider _tp;
         private readonly UuidV7Factory _uuid;
@@ -181,8 +184,8 @@ internal static class DistributedAtLeastOnceCausalityShowcase
             _attempts[orderId] = 1;
             _correlationIds[orderId] = correlationId;
 
-            var toPayments = GetOrCreateTemplate(new LogicalMessageKey(MessageKind.PlaceOrder, orderId, "payments"), correlationId, ts, vc);
-            var toInventory = GetOrCreateTemplate(new LogicalMessageKey(MessageKind.PlaceOrder, orderId, "inventory"), correlationId, ts, vc);
+            var toPayments = GetOrCreateTemplate(new LogicalMessageKey(MessageKind.PlaceOrder, orderId, PaymentsNodeName), correlationId, ts, vc);
+            var toInventory = GetOrCreateTemplate(new LogicalMessageKey(MessageKind.PlaceOrder, orderId, InventoryNodeName), correlationId, ts, vc);
             Send(toPayments.ToMessage(_uuid.NewGuid(), attempt: 1));
             Send(toInventory.ToMessage(_uuid.NewGuid(), attempt: 1));
 
@@ -245,7 +248,7 @@ internal static class DistributedAtLeastOnceCausalityShowcase
 
             fromSet.TryAdd(msg.From, 0);
 
-            if (fromSet.ContainsKey("payments") && fromSet.ContainsKey("inventory"))
+            if (fromSet.ContainsKey(PaymentsNodeName) && fromSet.ContainsKey(InventoryNodeName))
             {
                 if (_retries.TryRemove(msg.OrderId, out var handle))
                 {
@@ -255,6 +258,10 @@ internal static class DistributedAtLeastOnceCausalityShowcase
                 _acks.TryRemove(msg.OrderId, out _);
                 _attempts.TryRemove(msg.OrderId, out _);
                 _correlationIds.TryRemove(msg.OrderId, out _);
+                
+                // Clean up templates to prevent unbounded growth in long simulations
+                _templates.TryRemove(new LogicalMessageKey(MessageKind.PlaceOrder, msg.OrderId, PaymentsNodeName), out _);
+                _templates.TryRemove(new LogicalMessageKey(MessageKind.PlaceOrder, msg.OrderId, InventoryNodeName), out _);
             }
         }
 
@@ -294,7 +301,7 @@ internal static class DistributedAtLeastOnceCausalityShowcase
                 return;
             }
 
-            if (fromSet.ContainsKey("payments") && fromSet.ContainsKey("inventory"))
+            if (fromSet.ContainsKey(PaymentsNodeName) && fromSet.ContainsKey(InventoryNodeName))
             {
                 CleanupRetry(orderId);
                 return;
@@ -312,8 +319,8 @@ internal static class DistributedAtLeastOnceCausalityShowcase
 
             // Retries are resends of the same logical messages (stable MessageId/EventId),
             // but each send attempt gets a fresh TransmissionId.
-            var toPayments = GetOrCreateTemplate(new LogicalMessageKey(MessageKind.PlaceOrder, orderId, "payments"), correlationId, hlc: default, vc: default);
-            var toInventory = GetOrCreateTemplate(new LogicalMessageKey(MessageKind.PlaceOrder, orderId, "inventory"), correlationId, hlc: default, vc: default);
+            var toPayments = GetOrCreateTemplate(new LogicalMessageKey(MessageKind.PlaceOrder, orderId, PaymentsNodeName), correlationId, hlc: default, vc: default);
+            var toInventory = GetOrCreateTemplate(new LogicalMessageKey(MessageKind.PlaceOrder, orderId, InventoryNodeName), correlationId, hlc: default, vc: default);
             Send(toPayments.ToMessage(_uuid.NewGuid(), attempt: nextAttempt));
             Send(toInventory.ToMessage(_uuid.NewGuid(), attempt: nextAttempt));
 
