@@ -13,5 +13,6 @@ internal static class DemoCatalog
             ["simulated-time"] = SimulatedTimeProviderShowcase.Run,
             ["hlc-messaging"] = HlcMessagingShowcase.Run,
             ["hlc-coordinator"] = HlcCoordinatorShowcase.Run,
+            ["ds-atleastonce"] = DistributedAtLeastOnceCausalityShowcase.Run,
         };
 }
