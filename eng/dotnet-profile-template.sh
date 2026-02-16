@@ -1,3 +1,7 @@
+# shellcheck shell=bash
+# Profile script template for cloud agent environments
+# This file is sourced, not executed directly
+
 export DOTNET_CLI_TELEMETRY_OPTOUT=1
 export DOTNET_NOLOGO=1
 export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
