@@ -8,6 +8,28 @@ namespace Clockworks.Demo.Demos;
 
 internal static class DistributedAtLeastOnceCausalityShowcase
 {
+    /// <summary>
+    /// Runs a deterministic simulation of at-least-once message delivery with realistic network faults.
+    /// Demonstrates idempotent message handling, retry logic with timeouts, and causality tracking using both
+    /// Hybrid Logical Clocks (HLC) and Vector Clocks (VC).
+    /// </summary>
+    /// <param name="args">
+    /// Command-line arguments for simulation configuration:
+    /// --orders=N (number of orders to simulate, default: 5),
+    /// --maxSteps=N (max simulation steps, default: 2000),
+    /// --tickMs=N (time advance per step in ms, default: 5),
+    /// --printEvery=N (snapshot frequency in steps, default: 50),
+    /// --seed=N (random seed for deterministic fault injection, default: 123),
+    /// --drop=0.0-1.0 (message drop rate, default: 0.02),
+    /// --dup=0.0-1.0 (message duplicate rate, default: 0.05),
+    /// --reorder=0.0-1.0 (message reorder rate, default: 0.08),
+    /// --maxDelayMs=N (max additional message delay, default: 200)
+    /// </param>
+    /// <remarks>
+    /// This is a single-threaded, deterministic simulation suitable for testing and educational purposes.
+    /// All timing is controlled by SimulatedTimeProvider, allowing reproducible scenarios with configurable
+    /// fault injection (message drops, duplicates, reordering, delays).
+    /// </remarks>
     public static async Task Run(string[] args)
     {
         WriteLine("Distributed simulation: at-least-once delivery + idempotency + HLC + vector clocks");
@@ -117,6 +139,7 @@ internal static class DistributedAtLeastOnceCausalityShowcase
         private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _acks = new();
         private readonly ConcurrentDictionary<string, Timeouts.TimeoutHandle> _retries = new();
         private readonly ConcurrentDictionary<string, int> _attempts = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, Guid> _correlationIds = new(StringComparer.OrdinalIgnoreCase);
 
         public string Name { get; }
         public HlcCoordinator Hlc { get; }
@@ -150,6 +173,7 @@ internal static class DistributedAtLeastOnceCausalityShowcase
 
             _acks[orderId] = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
             _attempts[orderId] = 1;
+            _correlationIds[orderId] = correlationId;
 
             Send(new Message(
                 Kind: MessageKind.PlaceOrder,
@@ -236,12 +260,15 @@ internal static class DistributedAtLeastOnceCausalityShowcase
 
                 _acks.TryRemove(msg.OrderId, out _);
                 _attempts.TryRemove(msg.OrderId, out _);
+                _correlationIds.TryRemove(msg.OrderId, out _);
             }
         }
 
         public void Poll()
         {
-            foreach (var (orderId, handle) in _retries)
+            // Snapshot to avoid collection modification during iteration
+            var snapshot = _retries.ToArray();
+            foreach (var (orderId, handle) in snapshot)
             {
                 if (!handle.Token.IsCancellationRequested)
                     continue;
@@ -289,7 +316,9 @@ internal static class DistributedAtLeastOnceCausalityShowcase
             Vector.NewLocalEvent();
             var vc = Vector.BeforeSend();
             var ts = Hlc.BeforeSend();
-            var correlationId = Guid.CreateVersion7();
+            
+            // Preserve original correlation ID for distributed tracing
+            var correlationId = _correlationIds.TryGetValue(orderId, out var id) ? id : Guid.CreateVersion7();
 
             Send(new Message(
                 Kind: MessageKind.PlaceOrder,
@@ -414,19 +443,47 @@ internal static class DistributedAtLeastOnceCausalityShowcase
     private sealed class FailureInjector(int seed)
     {
         private readonly Random _random = new(seed);
+        private readonly Lock _lock = new();
 
         public double DropRate { get; set; }
         public double DuplicateRate { get; set; }
         public double ReorderRate { get; set; }
         public int MaxAdditionalDelayMs { get; set; }
 
-        public bool ShouldDrop() => _random.NextDouble() < DropRate;
-        public bool ShouldDuplicate() => _random.NextDouble() < DuplicateRate;
-        public bool ShouldReorder() => _random.NextDouble() < ReorderRate;
+        public bool ShouldDrop()
+        {
+            lock (_lock)
+            {
+                return _random.NextDouble() < DropRate;
+            }
+        }
 
-        public int AdditionalDelayMs() => MaxAdditionalDelayMs <= 0 
-            ? 0 
-            : _random.Next(0, MaxAdditionalDelayMs + 1);
+        public bool ShouldDuplicate()
+        {
+            lock (_lock)
+            {
+                return _random.NextDouble() < DuplicateRate;
+            }
+        }
+
+        public bool ShouldReorder()
+        {
+            lock (_lock)
+            {
+                return _random.NextDouble() < ReorderRate;
+            }
+        }
+
+        public int AdditionalDelayMs()
+        {
+            if (MaxAdditionalDelayMs <= 0)
+                return 0;
+                
+            lock (_lock)
+            {
+                return _random.Next(0, MaxAdditionalDelayMs + 1);
+            }
+        }
     }
 
     private sealed class SimulatedNetwork(SimulatedTimeProvider tp, FailureInjector failures)
