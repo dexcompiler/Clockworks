@@ -255,6 +255,10 @@ internal static class DistributedAtLeastOnceCausalityShowcase
                 _acks.TryRemove(msg.OrderId, out _);
                 _attempts.TryRemove(msg.OrderId, out _);
                 _correlationIds.TryRemove(msg.OrderId, out _);
+                
+                // Clean up templates to prevent unbounded growth in long simulations
+                _templates.TryRemove(new LogicalMessageKey(MessageKind.PlaceOrder, msg.OrderId, "payments"), out _);
+                _templates.TryRemove(new LogicalMessageKey(MessageKind.PlaceOrder, msg.OrderId, "inventory"), out _);
             }
         }
 
