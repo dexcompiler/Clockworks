@@ -227,6 +227,9 @@ dotnet run --project demo/Clockworks.Demo -- hlc-messaging
 
 # BeforeSend/BeforeReceive workflow with coordinator stats
 dotnet run --project demo/Clockworks.Demo -- hlc-coordinator
+
+ # Distributed simulation: at-least-once delivery + idempotency + HLC + vector clocks + timeouts
+ dotnet run --project demo/Clockworks.Demo -- ds-atleastonce
 ```
 
 The `uuidv7` demo also has an optional benchmark mode:
