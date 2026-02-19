@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 
 namespace Clockworks.Distributed;
@@ -77,9 +78,27 @@ internal sealed class VectorClockBuilder
         // Decode directly from canonical binary format to avoid reliance on VectorClock internals.
         // This is linear in number of entries and does not allocate per entry.
         var size = other.GetBinarySize();
-        byte[]? pooled = null;
-        Span<byte> buffer = size <= 1024 ? stackalloc byte[size] : (pooled = new byte[size]);
+        if (size <= 1024)
+        {
+            Span<byte> buffer = stackalloc byte[size];
+            MergeFromBuffer(other, buffer);
+            return;
+        }
 
+        var rented = ArrayPool<byte>.Shared.Rent(size);
+        try
+        {
+            var buffer = rented.AsSpan(0, size);
+            MergeFromBuffer(other, buffer);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+    }
+
+    private void MergeFromBuffer(VectorClock other, Span<byte> buffer)
+    {
         other.WriteTo(buffer);
 
         var count = BinaryPrimitives.ReadUInt32BigEndian(buffer);
