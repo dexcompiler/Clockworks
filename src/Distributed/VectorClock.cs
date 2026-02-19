@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Globalization;
+using System.Runtime.InteropServices;
 
 namespace Clockworks.Distributed;
 
@@ -454,24 +455,36 @@ public readonly struct VectorClock : IEquatable<VectorClock>
         if (pairs.Count == 0)
             return new VectorClock();
 
-        pairs.Sort((a, b) => a.nodeId.CompareTo(b.nodeId));
-
-        var nodeIds = new List<ushort>(pairs.Count);
-        var counters = new List<ulong>(pairs.Count);
-        foreach (var pair in pairs)
+        if (pairs.Count == 1)
         {
-            if (nodeIds.Count > 0 && nodeIds[^1] == pair.nodeId)
-            {
-                if (pair.counter > counters[^1])
-                    counters[^1] = pair.counter;
-                continue;
-            }
-
-            nodeIds.Add(pair.nodeId);
-            counters.Add(pair.counter);
+            var (nodeId, counter) = pairs[0];
+            return new VectorClock([nodeId], [counter]);
         }
 
-        return new VectorClock([.. nodeIds], [.. counters]);
+        var maxByNodeId = new Dictionary<ushort, ulong>(capacity: pairs.Count);
+        foreach (var (nodeId, counter) in pairs)
+        {
+            ref var existing = ref CollectionsMarshal.GetValueRefOrAddDefault(maxByNodeId, nodeId, out var exists);
+            if (!exists || counter > existing)
+                existing = counter;
+        }
+
+        if (maxByNodeId.Count == 0)
+            return new VectorClock();
+
+        var sorted = maxByNodeId.Keys.ToArray();
+        Array.Sort(sorted);
+
+        var nodeIds = new ushort[sorted.Length];
+        var counters = new ulong[sorted.Length];
+        for (var i = 0; i < sorted.Length; i++)
+        {
+            var nodeId = sorted[i];
+            nodeIds[i] = nodeId;
+            counters[i] = maxByNodeId[nodeId];
+        }
+
+        return new VectorClock(nodeIds, counters);
     }
 
     /// <summary>
