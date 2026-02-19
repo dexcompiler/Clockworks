@@ -13,7 +13,7 @@
     <PackageId>Clockworks</PackageId>
     <AssemblyName>Clockworks</AssemblyName>
     <RootNamespace>Clockworks</RootNamespace>
-    <Version>1.2.0</Version>
+    <Version>1.3.0</Version>
     <Authors>Dexter Ajoku</Authors>
     <Company>CloudyBox</Company>
     <Description>Clockworks is a .NET library for deterministic, fully controllable time in distributed-system simulations and tests. It provides a simulated TimeProvider with deterministic timer scheduling, TimeProvider-driven timeouts, UUIDv7 generation, and Hybrid Logical Clock (HLC) utilities with lightweight instrumentation.</Description>
