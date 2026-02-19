@@ -104,10 +104,11 @@ public readonly record struct HlcTimestamp : IComparable<HlcTimestamp>, ICompara
     /// </summary>
     public static HlcTimestamp FromPackedInt64(long packed)
     {
+        var u = unchecked((ulong)packed);
         return new HlcTimestamp(
-            wallTimeMs: packed >> 16,
-            counter: (ushort)((packed >> 4) & 0xFFF),
-            nodeId: (ushort)(packed & 0xF)
+            wallTimeMs: (long)((u >> 16) & ((1UL << PackedWallTimeBits) - 1UL)),
+            counter: (ushort)((u >> PackedNodeIdBits) & PackedCounterMask),
+            nodeId: (ushort)(u & PackedNodeIdMask)
         );
     }
 
