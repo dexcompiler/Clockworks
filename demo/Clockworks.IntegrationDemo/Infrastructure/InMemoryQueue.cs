@@ -8,7 +8,7 @@ public sealed class InMemoryQueue
 
     public void Enqueue(QueuedMessage msg) => _queue.Enqueue(msg);
 
-    public bool TryDequeue(out QueuedMessage msg) => _queue.TryDequeue(out msg);
+    public bool TryDequeue(out QueuedMessage msg) => _queue.TryDequeue(out msg!);
 
     public int Count => _queue.Count;
 
