@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Globalization;
+using System.Runtime.InteropServices;
 
 namespace Clockworks.Distributed;
 
@@ -55,6 +56,11 @@ public readonly struct VectorClock : IEquatable<VectorClock>
     private const int MaxEntries = ushort.MaxValue + 1;
 
     /// <summary>
+    /// True when the vector clock contains no entries.
+    /// </summary>
+    public bool IsEmpty => _nodeIds == null || _counters == null || _nodeIds.Length == 0;
+
+    /// <summary>
     /// Creates an empty vector clock.
     /// </summary>
     public VectorClock()
@@ -67,6 +73,24 @@ public readonly struct VectorClock : IEquatable<VectorClock>
     {
         _nodeIds = nodeIds;
         _counters = counters;
+    }
+
+    internal int Count => _nodeIds?.Length ?? 0;
+
+    internal void CopyTo(Span<ushort> nodeIds, Span<ulong> counters)
+    {
+        if (_nodeIds == null || _counters == null)
+            return;
+
+        _nodeIds.CopyTo(nodeIds);
+        _counters.CopyTo(counters);
+    }
+
+    internal static VectorClock CreateUnsafe(ushort[] nodeIds, ulong[] counters)
+    {
+        if (nodeIds.Length != counters.Length)
+            throw new ArgumentException("nodeIds and counters must have same length.");
+        return new VectorClock(nodeIds, counters);
     }
 
     /// <summary>
@@ -284,7 +308,8 @@ public readonly struct VectorClock : IEquatable<VectorClock>
 
     /// <summary>
     /// Writes this vector clock to a binary representation.
-    /// Format: [count:uint][nodeId:ushort,counter:ulong]*
+    /// Format: [count:u32 big-endian][(nodeId:u16 big-endian, counter:u64 big-endian)]*.
+    /// The in-memory representation is canonical (sorted by <c>nodeId</c>), so the serialized form is canonical.
     /// </summary>
     public void WriteTo(Span<byte> destination)
     {
@@ -430,24 +455,36 @@ public readonly struct VectorClock : IEquatable<VectorClock>
         if (pairs.Count == 0)
             return new VectorClock();
 
-        pairs.Sort((a, b) => a.nodeId.CompareTo(b.nodeId));
-
-        var nodeIds = new List<ushort>(pairs.Count);
-        var counters = new List<ulong>(pairs.Count);
-        foreach (var pair in pairs)
+        if (pairs.Count == 1)
         {
-            if (nodeIds.Count > 0 && nodeIds[^1] == pair.nodeId)
-            {
-                if (pair.counter > counters[^1])
-                    counters[^1] = pair.counter;
-                continue;
-            }
-
-            nodeIds.Add(pair.nodeId);
-            counters.Add(pair.counter);
+            var (nodeId, counter) = pairs[0];
+            return new VectorClock([nodeId], [counter]);
         }
 
-        return new VectorClock([.. nodeIds], [.. counters]);
+        var maxByNodeId = new Dictionary<ushort, ulong>(capacity: pairs.Count);
+        foreach (var (nodeId, counter) in pairs)
+        {
+            ref var existing = ref CollectionsMarshal.GetValueRefOrAddDefault(maxByNodeId, nodeId, out var exists);
+            if (!exists || counter > existing)
+                existing = counter;
+        }
+
+        if (maxByNodeId.Count == 0)
+            return new VectorClock();
+
+        var sorted = maxByNodeId.Keys.ToArray();
+        Array.Sort(sorted);
+
+        var nodeIds = new ushort[sorted.Length];
+        var counters = new ulong[sorted.Length];
+        for (var i = 0; i < sorted.Length; i++)
+        {
+            var nodeId = sorted[i];
+            nodeIds[i] = nodeId;
+            counters[i] = maxByNodeId[nodeId];
+        }
+
+        return new VectorClock(nodeIds, counters);
     }
 
     /// <summary>

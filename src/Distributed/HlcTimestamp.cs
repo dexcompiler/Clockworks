@@ -20,6 +20,31 @@ namespace Clockworks.Distributed;
 public readonly record struct HlcTimestamp : IComparable<HlcTimestamp>, IComparable
 {
     /// <summary>
+    /// Number of bits allocated to the wall time component in <see cref="ToPackedInt64"/>.
+    /// </summary>
+    public const int PackedWallTimeBits = 48;
+
+    /// <summary>
+    /// Number of bits allocated to the counter component in <see cref="ToPackedInt64"/>.
+    /// </summary>
+    public const int PackedCounterBits = 12;
+
+    /// <summary>
+    /// Number of bits allocated to node id in <see cref="ToPackedInt64"/>.
+    /// </summary>
+    public const int PackedNodeIdBits = 4;
+
+    /// <summary>
+    /// Bit mask applied to <see cref="Counter"/> in <see cref="ToPackedInt64"/>.
+    /// </summary>
+    public const ushort PackedCounterMask = 0x0FFF;
+
+    /// <summary>
+    /// Bit mask applied to <see cref="NodeId"/> in <see cref="ToPackedInt64"/>.
+    /// </summary>
+    public const ushort PackedNodeIdMask = 0x000F;
+
+    /// <summary>
     /// Logical wall time in milliseconds since Unix epoch.
     /// May drift ahead of physical time to maintain causality.
     /// </summary>
@@ -52,16 +77,23 @@ public readonly record struct HlcTimestamp : IComparable<HlcTimestamp>, ICompara
 
     /// <summary>
     /// Packs the timestamp into a 64-bit value for efficient storage/transmission.
-    /// Layout: [48 bits wall time][12 bits counter][4 bits node (truncated)]
+    /// Layout: [48 bits wall time][12 bits counter][4 bits node id].
     /// </summary>
+    /// <remarks>
+    /// This packed encoding is an optimization format.
+    /// <para>
+    /// <see cref="NodeId"/> is truncated to the lower 4 bits (0-15).
+    /// Use <see cref="WriteTo"/> / <see cref="ReadFrom"/> for a full-fidelity encoding.
+    /// </para>
+    /// </remarks>
     public long ToPackedInt64()
     {
         // 48 bits for timestamp (good until year 10889)
         // 12 bits for counter (0-4095)
         // 4 bits for node ID (0-15, use for small clusters)
         ulong wall = (ulong)WallTimeMs;
-        ulong counter = (ulong)(Counter & 0x0FFF);
-        ulong node = (ulong)(NodeId & 0x000F);
+        ulong counter = (ulong)(Counter & PackedCounterMask);
+        ulong node = (ulong)(NodeId & PackedNodeIdMask);
 
         ulong packed = (wall << 16) | (counter << 4) | node;
         return unchecked((long)packed);
@@ -72,10 +104,11 @@ public readonly record struct HlcTimestamp : IComparable<HlcTimestamp>, ICompara
     /// </summary>
     public static HlcTimestamp FromPackedInt64(long packed)
     {
+        var u = unchecked((ulong)packed);
         return new HlcTimestamp(
-            wallTimeMs: packed >> 16,
-            counter: (ushort)((packed >> 4) & 0xFFF),
-            nodeId: (ushort)(packed & 0xF)
+            wallTimeMs: (long)((u >> 16) & ((1UL << PackedWallTimeBits) - 1UL)),
+            counter: (ushort)((u >> PackedNodeIdBits) & PackedCounterMask),
+            nodeId: (ushort)(u & PackedNodeIdMask)
         );
     }
 
