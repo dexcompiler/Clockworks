@@ -1,4 +1,5 @@
 using Clockworks.Abstractions;
+using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 
@@ -109,9 +110,72 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
     /// <inheritdoc/>
     public void NewGuids(Span<Guid> destination)
     {
-        for (int i = 0; i < destination.Length; i++)
+        if (destination.Length == 0)
+            return;
+
+        FillGuids(destination);
+    }
+
+    private void FillGuids(Span<Guid> destination)
+    {
+        var i = 0;
+        var spinWait = new SpinWait();
+
+        while (i < destination.Length)
         {
-            destination[i] = NewGuid();
+            var currentPacked = Volatile.Read(ref _packedState);
+            var (currentTimestamp, currentCounter) = UnpackState(currentPacked);
+
+            var physicalTime = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+
+            var baseTimestamp = physicalTime > currentTimestamp ? physicalTime : currentTimestamp;
+
+            // If we moved forward to a new physical millisecond, start a fresh random counter window.
+            // Otherwise continue from the current counter.
+            var startCounter = physicalTime > currentTimestamp ? GetRandomCounterStart() : (ushort)(currentCounter + 1);
+
+            if (startCounter > MaxCounterValue)
+            {
+                // Counter overflow at this millisecond.
+                switch (_effectiveOverflowBehavior)
+                {
+                    case CounterOverflowBehavior.SpinWait:
+                        SpinWaitForNextMillisecond(baseTimestamp);
+                        continue;
+
+                    case CounterOverflowBehavior.IncrementTimestamp:
+                        baseTimestamp = currentTimestamp + 1;
+                        startCounter = GetRandomCounterStart();
+                        break;
+
+                    case CounterOverflowBehavior.ThrowException:
+                        throw new InvalidOperationException(
+                            $"Counter overflow: generated {MaxCounterValue + 1} UUIDs within millisecond {currentTimestamp}");
+
+                    default:
+                        throw new ArgumentOutOfRangeException();
+                }
+            }
+
+            var remainingInMs = MaxCounterValue - startCounter;
+            var available = Math.Min(destination.Length - i, remainingInMs + 1);
+
+            var newTimestamp = baseTimestamp;
+            var newCounter = (ushort)(startCounter + available - 1);
+            var newPacked = PackState(newTimestamp, newCounter);
+
+            if (Interlocked.CompareExchange(ref _packedState, newPacked, currentPacked) != currentPacked)
+            {
+                spinWait.SpinOnce();
+                continue;
+            }
+
+            for (var j = 0; j < available; j++)
+            {
+                destination[i + j] = CreateGuidFromState(baseTimestamp, (ushort)(startCounter + j));
+            }
+
+            i += available;
         }
     }
 
@@ -250,7 +314,8 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
         // Start in lower half of counter space to leave room for increments
         // This reduces collision probability across instances starting in the same ms
         var bytes = _randomBuffer.Value!.GetBytes(2);
-        return (ushort)((bytes[0] | (bytes[1] << 8)) & CounterRandomStart);
+        var value = BinaryPrimitives.ReadUInt16LittleEndian(bytes);
+        return (ushort)(value & CounterRandomStart);
     }
 
     private void SpinWaitForNextMillisecond(long currentMs)
