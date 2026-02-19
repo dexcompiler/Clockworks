@@ -25,12 +25,13 @@ It is built around `TimeProvider` so that *time becomes an injectable dependency
 - **Hybrid Logical Clock (HLC)**
   - HLC timestamps and utilities to preserve causality in distributed simulations
   - Helpers to witness remote timestamps and generate outbound timestamps
+  - Provides both a canonical 10-byte big-endian encoding (`HlcTimestamp.WriteTo`/`ReadFrom`) and an optimized packed 64-bit encoding (`ToPackedInt64`/`FromPackedInt64`)
 
 - **Vector Clock**
   - Full vector clock implementation for exact causality tracking and concurrency detection
   - Sorted-array representation optimized for sparse clocks
-  - `VectorClockCoordinator` for thread-safe clock management across distributed nodes
-  - Message header propagation for HTTP/gRPC integration
+  - `VectorClockCoordinator` for thread-safe clock management across distributed nodes (allocation-conscious hot path)
+  - Canonical binary wire format (`VectorClock.WriteTo`/`ReadFrom`) and string form for HTTP/gRPC headers
 
 - **Lightweight instrumentation**
   - Counters for timers, advances, and timeouts useful in simulation/test assertions
@@ -99,6 +100,8 @@ var headerString = header.ToString(); // "1:1;{correlationId}" (example)
 In Clockworks, a "remote timestamp" is the `HlcTimestamp` produced on a different node and carried over the wire
 via `HlcMessageHeader` (format: `walltime.counter@node`). The receiver should call `BeforeReceive(...)` with that
 timestamp to preserve causality.
+
+Note: `HlcTimestamp.ToPackedInt64()`/`FromPackedInt64()` is an optimization encoding with a 48-bit wall time and a 4-bit node id (node id is truncated). Use `WriteTo`/`ReadFrom` when you need a full-fidelity representation.
 
 ```csharp
 var tp = new SimulatedTimeProvider();
@@ -191,6 +194,13 @@ Console.WriteLine(clockA.IsConcurrentWith(clockB)); // true
 
 // HLC would show one as "less than" the other based on physical time
 ```
+
+**Wire formats**
+
+- **Binary (canonical):** `VectorClock.WriteTo`/`VectorClock.ReadFrom`
+  - Format: `[count:u32 big-endian][(nodeId:u16 big-endian, counter:u64 big-endian)]*`
+  - `ReadFrom` canonicalizes unsorted input and deduplicates node IDs by taking the maximum counter.
+- **String (for headers):** `VectorClock.ToString()` / `VectorClock.Parse(...)` (`"node:counter,node:counter"`, sorted by node id)
 
 ## Demos
 

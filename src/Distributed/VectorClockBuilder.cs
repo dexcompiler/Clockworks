@@ -13,8 +13,7 @@ internal sealed class VectorClockBuilder
 
     public VectorClockBuilder(int initialCapacity = 4)
     {
-        if (initialCapacity < 0)
-            throw new ArgumentOutOfRangeException(nameof(initialCapacity));
+        ArgumentOutOfRangeException.ThrowIfNegative(initialCapacity);
 
         _nodeIds = initialCapacity == 0 ? [] : new ushort[initialCapacity];
         _counters = initialCapacity == 0 ? [] : new ulong[initialCapacity];

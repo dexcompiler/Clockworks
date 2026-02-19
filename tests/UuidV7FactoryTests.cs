@@ -5,6 +5,46 @@ namespace Clockworks.Tests;
 public sealed class UuidV7FactoryTests
 {
     [Fact]
+    public void NewGuids_IsMonotonic_AndUnique_WhenTimeDoesNotAdvance()
+    {
+        var time = SimulatedTimeProvider.FromUnixMs(1_700_000_000_000);
+        using var rng = new DeterministicRandomNumberGenerator(seed: 1);
+        using var factory = new UuidV7Factory(time, rng, overflowBehavior: CounterOverflowBehavior.IncrementTimestamp);
+
+        Span<Guid> batch = stackalloc Guid[256];
+        factory.NewGuids(batch);
+
+        for (var i = 1; i < batch.Length; i++)
+        {
+            Assert.True(batch[i - 1] < batch[i]);
+        }
+
+        var set = new HashSet<Guid>();
+        foreach (var g in batch)
+            Assert.True(set.Add(g));
+
+        // Time does not need to advance.
+        Assert.Equal(1_700_000_000_000, time.GetUtcNow().ToUnixTimeMilliseconds());
+    }
+
+    [Fact]
+    public void NewGuids_RemainsMonotonic_AcrossCounterOverflow_WhenIncrementTimestampEnabled()
+    {
+        var time = SimulatedTimeProvider.FromUnixMs(1_700_000_000_000);
+        using var rng = new DeterministicRandomNumberGenerator(seed: 1);
+        using var factory = new UuidV7Factory(time, rng, overflowBehavior: CounterOverflowBehavior.IncrementTimestamp);
+
+        // Large enough to cross the 12-bit counter range regardless of random start.
+        var arr = new Guid[5000];
+        factory.NewGuids(arr);
+
+        for (var i = 1; i < arr.Length; i++)
+        {
+            Assert.True(arr[i - 1] < arr[i]);
+        }
+    }
+
+    [Fact]
     public void NewGuid_IsMonotonic_WhenTimeDoesNotAdvance()
     {
         var (factory, time, _) = DeterministicGuidSetup.CreateLockFree(seed: 123, startTimeUnixMs: 1_700_000_000_000);
