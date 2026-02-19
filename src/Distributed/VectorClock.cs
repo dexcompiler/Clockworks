@@ -55,6 +55,11 @@ public readonly struct VectorClock : IEquatable<VectorClock>
     private const int MaxEntries = ushort.MaxValue + 1;
 
     /// <summary>
+    /// True when the vector clock contains no entries.
+    /// </summary>
+    public bool IsEmpty => _nodeIds == null || _counters == null || _nodeIds.Length == 0;
+
+    /// <summary>
     /// Creates an empty vector clock.
     /// </summary>
     public VectorClock()
@@ -67,6 +72,24 @@ public readonly struct VectorClock : IEquatable<VectorClock>
     {
         _nodeIds = nodeIds;
         _counters = counters;
+    }
+
+    internal int Count => _nodeIds?.Length ?? 0;
+
+    internal void CopyTo(Span<ushort> nodeIds, Span<ulong> counters)
+    {
+        if (_nodeIds == null || _counters == null)
+            return;
+
+        _nodeIds.CopyTo(nodeIds);
+        _counters.CopyTo(counters);
+    }
+
+    internal static VectorClock CreateUnsafe(ushort[] nodeIds, ulong[] counters)
+    {
+        if (nodeIds.Length != counters.Length)
+            throw new ArgumentException("nodeIds and counters must have same length.");
+        return new VectorClock(nodeIds, counters);
     }
 
     /// <summary>
@@ -284,7 +307,8 @@ public readonly struct VectorClock : IEquatable<VectorClock>
 
     /// <summary>
     /// Writes this vector clock to a binary representation.
-    /// Format: [count:uint][nodeId:ushort,counter:ulong]*
+    /// Format: [count:u32 big-endian][(nodeId:u16 big-endian, counter:u64 big-endian)]*.
+    /// The in-memory representation is canonical (sorted by <c>nodeId</c>), so the serialized form is canonical.
     /// </summary>
     public void WriteTo(Span<byte> destination)
     {

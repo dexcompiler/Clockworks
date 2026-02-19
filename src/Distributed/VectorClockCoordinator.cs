@@ -28,6 +28,7 @@ public sealed class VectorClockCoordinator
     private readonly ushort _nodeId;
     private readonly Lock _lock = new();
     private VectorClock _current;
+    private readonly VectorClockBuilder _builder = new();
 
     /// <summary>
     /// Statistics for monitoring vector clock behavior.
@@ -68,7 +69,12 @@ public sealed class VectorClockCoordinator
         lock (_lock)
         {
             var before = _current;
-            _current = _current.Merge(remote).Increment(_nodeId);
+
+            _builder.Reset(_current);
+            _builder.Merge(remote);
+            _builder.Increment(_nodeId);
+            _current = _builder.ToSnapshot();
+
             Statistics.RecordReceive(before, _current, remote);
         }
     }
@@ -82,7 +88,10 @@ public sealed class VectorClockCoordinator
     {
         lock (_lock)
         {
-            _current = _current.Increment(_nodeId);
+            _builder.Reset(_current);
+            _builder.Increment(_nodeId);
+            _current = _builder.ToSnapshot();
+
             var snapshot = _current;
             Statistics.RecordSend(snapshot);
             return snapshot;
@@ -97,7 +106,10 @@ public sealed class VectorClockCoordinator
     {
         lock (_lock)
         {
-            _current = _current.Increment(_nodeId);
+            _builder.Reset(_current);
+            _builder.Increment(_nodeId);
+            _current = _builder.ToSnapshot();
+
             Statistics.RecordLocalEvent(_current);
         }
     }
