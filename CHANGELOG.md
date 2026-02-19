@@ -29,8 +29,6 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - UUIDv7 packing now uses `BinaryPrimitives` and a tighter packing path.
 - UUIDv7 factory batch generation throughput improvements.
 - Adopt C# 14 extension member blocks.
-- Use `ThrowIfNegative` for argument validation.
-- Replace some `ArgumentOutOfRangeException` throws with `UnreachableException`.
 
 ### Added
 - Add high-value property tests for HLC and vector clocks.
