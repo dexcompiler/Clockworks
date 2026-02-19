@@ -1,5 +1,6 @@
 using Clockworks.Abstractions;
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 
@@ -153,7 +154,7 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
                             $"Counter overflow: generated {MaxCounterValue + 1} UUIDs within millisecond {currentTimestamp}");
 
                     default:
-                        throw new ArgumentOutOfRangeException(nameof(_effectiveOverflowBehavior));
+                        throw new UnreachableException();
                 }
             }
 
@@ -233,7 +234,7 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
                                 $"Counter overflow: generated {MaxCounterValue + 1} UUIDs within millisecond {currentTimestamp}");
 
                         default:
-                            throw new ArgumentOutOfRangeException(nameof(_effectiveOverflowBehavior));
+                            throw new UnreachableException();
                     }
                 }
                 else
