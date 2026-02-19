@@ -2,7 +2,6 @@ using Clockworks;
 using Clockworks.Distributed;
 using Clockworks.Instrumentation;
 using Clockworks.Demo.Infrastructure;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using static System.Console;
 
@@ -142,11 +141,12 @@ internal static class DistributedAtLeastOnceCausalityShowcase
         private readonly TimeProvider _tp;
         private readonly UuidV7Factory _uuid;
         private readonly BoundedInboxDedupe _inbox;
-        private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _acks = new();
-        private readonly ConcurrentDictionary<string, Timeouts.TimeoutHandle> _retries = new();
-        private readonly ConcurrentDictionary<string, int> _attempts = new(StringComparer.OrdinalIgnoreCase);
-        private readonly ConcurrentDictionary<string, Guid> _correlationIds = new(StringComparer.OrdinalIgnoreCase);
-        private readonly ConcurrentDictionary<LogicalMessageKey, MessageTemplate> _templates = new();
+        // This demo is single-threaded and deterministic, so we intentionally use non-concurrent collections.
+        private readonly Dictionary<string, HashSet<string>> _acks = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Timeouts.TimeoutHandle> _retries = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, int> _attempts = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Guid> _correlationIds = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<LogicalMessageKey, MessageTemplate> _templates = new();
 
         public string Name { get; }
         public HlcCoordinator Hlc { get; }
@@ -171,7 +171,7 @@ internal static class DistributedAtLeastOnceCausalityShowcase
             Vector = new VectorClockCoordinator(nodeId);
         }
 
-        public bool IsDone => _acks.IsEmpty && _retries.IsEmpty;
+        public bool IsDone => _acks.Count == 0 && _retries.Count == 0;
 
         public void StartNewOrder(string orderId)
         {
@@ -180,7 +180,7 @@ internal static class DistributedAtLeastOnceCausalityShowcase
             var ts = Hlc.BeforeSend();
             var correlationId = _uuid.NewGuid();
 
-            _acks[orderId] = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
+            _acks[orderId] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             _attempts[orderId] = 1;
             _correlationIds[orderId] = correlationId;
 
@@ -246,28 +246,27 @@ internal static class DistributedAtLeastOnceCausalityShowcase
                 return;
             }
 
-            fromSet.TryAdd(msg.From, 0);
+            fromSet.Add(msg.From);
 
-            if (fromSet.ContainsKey(PaymentsNodeName) && fromSet.ContainsKey(InventoryNodeName))
+            if (fromSet.Contains(PaymentsNodeName) && fromSet.Contains(InventoryNodeName))
             {
-                if (_retries.TryRemove(msg.OrderId, out var handle))
-                {
+                if (_retries.Remove(msg.OrderId, out var handle))
                     handle.Dispose();
-                }
 
-                _acks.TryRemove(msg.OrderId, out _);
-                _attempts.TryRemove(msg.OrderId, out _);
-                _correlationIds.TryRemove(msg.OrderId, out _);
+                _acks.Remove(msg.OrderId);
+                _attempts.Remove(msg.OrderId);
+                _correlationIds.Remove(msg.OrderId);
                 
                 // Clean up templates to prevent unbounded growth in long simulations
-                _templates.TryRemove(new LogicalMessageKey(MessageKind.PlaceOrder, msg.OrderId, PaymentsNodeName), out _);
-                _templates.TryRemove(new LogicalMessageKey(MessageKind.PlaceOrder, msg.OrderId, InventoryNodeName), out _);
+                _templates.Remove(new LogicalMessageKey(MessageKind.PlaceOrder, msg.OrderId, PaymentsNodeName));
+                _templates.Remove(new LogicalMessageKey(MessageKind.PlaceOrder, msg.OrderId, InventoryNodeName));
             }
         }
 
         public void Poll()
         {
-            // Snapshot to avoid collection modification during iteration
+            // Snapshot to avoid collection modification during iteration.
+            // (Timeout callbacks are driven by SimulatedTimeProvider; we still keep iteration safe.)
             var snapshot = _retries.ToArray();
             foreach (var (orderId, handle) in snapshot)
             {
@@ -287,10 +286,7 @@ internal static class DistributedAtLeastOnceCausalityShowcase
 
             var handle = Timeouts.CreateTimeoutHandle(_tp, TimeSpan.FromMilliseconds(50), statistics: TimeoutStats);
             if (!_retries.TryAdd(orderId, handle))
-            {
                 handle.Dispose();
-                return;
-            }
         }
 
         private void TryRetry(string orderId)
@@ -301,13 +297,14 @@ internal static class DistributedAtLeastOnceCausalityShowcase
                 return;
             }
 
-            if (fromSet.ContainsKey(PaymentsNodeName) && fromSet.ContainsKey(InventoryNodeName))
+            if (fromSet.Contains(PaymentsNodeName) && fromSet.Contains(InventoryNodeName))
             {
                 CleanupRetry(orderId);
                 return;
             }
 
-            var nextAttempt = _attempts.AddOrUpdate(orderId, 2, static (_, current) => current + 1);
+            var nextAttempt = _attempts.TryGetValue(orderId, out var currentAttempt) ? currentAttempt + 1 : 2;
+            _attempts[orderId] = nextAttempt;
             if (nextAttempt > 10)
             {
                 CleanupRetry(orderId);
@@ -334,7 +331,7 @@ internal static class DistributedAtLeastOnceCausalityShowcase
             if (_templates.TryGetValue(key, out var existing))
                 return existing;
 
-            if (hlc == default || vc.Equals(default(VectorClock)))
+            if (hlc == default || vc.IsEmpty)
             {
                 // This should not happen for normal flow (templates are created during StartNewOrder),
                 // but if it does, synthesize a reasonable envelope.
@@ -354,15 +351,14 @@ internal static class DistributedAtLeastOnceCausalityShowcase
                 Hlc: hlc,
                 VectorClock: vc);
 
-            return _templates.GetOrAdd(key, template);
+            _templates[key] = template;
+            return template;
         }
 
         private void CleanupRetry(string orderId)
         {
-            if (_retries.TryRemove(orderId, out var existing))
-            {
+            if (_retries.Remove(orderId, out var existing))
                 existing.Dispose();
-            }
         }
 
         private void Send(Message msg) => _network.Send(msg);
@@ -562,8 +558,9 @@ internal static class DistributedAtLeastOnceCausalityShowcase
         private readonly Lock _lock = new();
         private readonly SimulatedTimeProvider _tp = tp;
         private readonly FailureInjector _failures = failures;
-        private readonly ConcurrentDictionary<string, Node> _nodes = new(StringComparer.OrdinalIgnoreCase);
-        private readonly List<Envelope> _inFlight = [];
+        private readonly Dictionary<string, Node> _nodes = new(StringComparer.OrdinalIgnoreCase);
+        private readonly PriorityQueue<Envelope, DeliveryPriority> _inFlight = new();
+        private long _sequence;
 
         public MessagingStatistics Stats { get; } = new();
 
@@ -595,7 +592,8 @@ internal static class DistributedAtLeastOnceCausalityShowcase
                 {
                     if (_inFlight.Count == 0)
                         return null;
-                    return _inFlight.Min(m => m.DeliverAtUtcMs);
+
+                    return _inFlight.Peek().Priority.DeliverAtUtcMs;
                 }
             }
         }
@@ -617,11 +615,11 @@ internal static class DistributedAtLeastOnceCausalityShowcase
 
             lock (_lock)
             {
-                _inFlight.Add(new Envelope(msg, deliverAt));
+                Enqueue(msg, deliverAt);
 
                 if (_failures.ShouldDuplicate())
                 {
-                    _inFlight.Add(new Envelope(msg with { }, deliverAt + _failures.AdditionalDelayMs()));
+                    Enqueue(msg with { }, deliverAt + _failures.AdditionalDelayMs());
                     Stats.RecordDuplicated(_inFlight.Count);
                 }
 
@@ -629,9 +627,9 @@ internal static class DistributedAtLeastOnceCausalityShowcase
 
                 if (_failures.ShouldReorder() && _inFlight.Count >= 2)
                 {
-                    var i = _inFlight.Count - 1;
-                    var j = Math.Max(0, i - 1);
-                    (_inFlight[i], _inFlight[j]) = (_inFlight[j], _inFlight[i]);
+                    // Model reordering as small bounded jitter on delivery time.
+                    // Clamp to >= now so delivery remains time-driven (no "instant" negative delay).
+                    ApplyReorderJitterUnsafe(now);
                     Stats.RecordReordered();
                 }
             }
@@ -647,14 +645,14 @@ internal static class DistributedAtLeastOnceCausalityShowcase
                 if (_inFlight.Count == 0)
                     return;
 
-                due = _inFlight.Where(m => m.DeliverAtUtcMs <= now).ToList();
+                due = [];
+                while (_inFlight.Count > 0 && _inFlight.Peek().Priority.DeliverAtUtcMs <= now)
+                {
+                    due.Add(_inFlight.Dequeue());
+                }
+
                 if (due.Count == 0)
                     return;
-
-                foreach (var m in due)
-                {
-                    _inFlight.Remove(m);
-                }
             }
 
             foreach (var env in due)
@@ -666,6 +664,41 @@ internal static class DistributedAtLeastOnceCausalityShowcase
 
                     ObserveConcurrency(env.Message);
                 }
+            }
+        }
+
+        private void Enqueue(Message msg, long deliverAtUtcMs)
+        {
+            var env = new Envelope(msg);
+            var priority = new DeliveryPriority(deliverAtUtcMs, unchecked(++_sequence));
+            env.Priority = priority;
+            _inFlight.Enqueue(env, priority);
+        }
+
+        private void ApplyReorderJitterUnsafe(long nowUtcMs)
+        {
+            if (_inFlight.Count < 2)
+                return;
+
+            // PriorityQueue has no decrease-key; rebuild for a tiny demo workload.
+            var entries = new List<Envelope>(_inFlight.Count);
+            while (_inFlight.Count > 0)
+            {
+                entries.Add(_inFlight.Dequeue());
+            }
+
+            var jitterWindowMs = Math.Min(10, Math.Max(1, _failures.MaxAdditionalDelayMs / 20));
+            for (var i = Math.Max(0, entries.Count - 2); i < entries.Count; i++)
+            {
+                var env = entries[i];
+                var jitter = _failures.AdditionalDelayMs() % (jitterWindowMs + 1);
+                var newDeliverAt = Math.Max(nowUtcMs, env.Priority.DeliverAtUtcMs - jitter);
+                env.Priority = env.Priority with { DeliverAtUtcMs = newDeliverAt };
+            }
+
+            foreach (var env in entries)
+            {
+                _inFlight.Enqueue(env, env.Priority);
             }
         }
 
@@ -700,7 +733,21 @@ internal static class DistributedAtLeastOnceCausalityShowcase
             }
         }
 
-        private sealed record Envelope(Message Message, long DeliverAtUtcMs);
+        private sealed record Envelope(Message Message)
+        {
+            public DeliveryPriority Priority { get; set; }
+        }
+
+        private readonly record struct DeliveryPriority(long DeliverAtUtcMs, long Sequence) : IComparable<DeliveryPriority>
+        {
+            public int CompareTo(DeliveryPriority other)
+            {
+                var cmp = DeliverAtUtcMs.CompareTo(other.DeliverAtUtcMs);
+                if (cmp != 0)
+                    return cmp;
+                return Sequence.CompareTo(other.Sequence);
+            }
+        }
 
         private sealed record DeliveredEvent(Guid EventId, MessageKind Kind, string From, string To, VectorClock VectorClock);
     }
