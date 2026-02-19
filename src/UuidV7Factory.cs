@@ -153,7 +153,7 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
                             $"Counter overflow: generated {MaxCounterValue + 1} UUIDs within millisecond {currentTimestamp}");
 
                     default:
-                        throw new ArgumentOutOfRangeException();
+                        throw new ArgumentOutOfRangeException(nameof(_effectiveOverflowBehavior));
                 }
             }
 
@@ -233,7 +233,7 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
                                 $"Counter overflow: generated {MaxCounterValue + 1} UUIDs within millisecond {currentTimestamp}");
 
                         default:
-                            throw new ArgumentOutOfRangeException();
+                            throw new ArgumentOutOfRangeException(nameof(_effectiveOverflowBehavior));
                     }
                 }
                 else
