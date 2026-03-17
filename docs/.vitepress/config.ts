@@ -19,7 +19,8 @@ export default defineConfig({
   },
 
   themeConfig: {
-    logo: '/Clockworks/logo.png',
+    // Absolute paths are resolved relative to `base`
+    logo: '/logo.png',
     siteTitle: 'Clockworks',
 
     nav: [
