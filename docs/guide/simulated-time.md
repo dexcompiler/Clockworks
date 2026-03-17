@@ -26,7 +26,7 @@ Scheduler time advances only via `Advance()`. Wall time can be modified independ
 | `SetUtcNow(DateTimeOffset)` | Set the wall clock to an arbitrary time |
 | `Advance(TimeSpan)` | Advance scheduler (and wall) time, firing all due timers in order |
 | `GetTimestamp()` | Returns the current monotonic scheduler timestamp |
-| `GetElapsedTime(long)` | Returns elapsed time since a previous `GetTimestamp()` value |
+| `GetElapsedTime(...)` | Returns elapsed time since a previous `GetTimestamp()` value |
 
 ## Deterministic Timers
 
@@ -55,9 +55,30 @@ tp.Advance(TimeSpan.FromSeconds(2));
 // log == ["first", "second"]
 ```
 
+::: tip Callback execution model
+Timer callbacks are invoked **synchronously** by the thread calling `Advance()`, and are fired **outside** the internal scheduler lock. This makes simulations deterministic and avoids re-entrancy hazards inside the scheduler.
+:::
+
+## Changing and cancelling timers
+
+The timer returned by `CreateTimer(...)` implements `ITimer`, so you can reschedule it using `Change(...)` or stop it by disposing it.
+
+```csharp
+var tp = new SimulatedTimeProvider();
+var fired = 0;
+
+using var timer = tp.CreateTimer(_ => fired++, null, TimeSpan.FromSeconds(10), Timeout.InfiniteTimeSpan);
+
+// Reschedule to fire sooner
+timer.Change(TimeSpan.FromSeconds(1), Timeout.InfiniteTimeSpan);
+
+tp.Advance(TimeSpan.FromSeconds(1));
+// fired == 1
+```
+
 ## Periodic Timers
 
-Periodic timers are rescheduled after each callback. If a single `Advance()` spans multiple periods, all callbacks for that period are coalesced and fired in order — no callbacks are skipped.
+Periodic timers are rescheduled after each callback. By default, `SimulatedTimeProvider` **coalesces** periodic timers on large time jumps: if a single `Advance()` spans multiple periods, the callback fires **once**, and the next occurrence is scheduled from “now”.
 
 ```csharp
 var tp = new SimulatedTimeProvider();
@@ -66,21 +87,26 @@ var ticks = 0;
 using var timer = tp.CreateTimer(_ => ticks++, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
 
 tp.Advance(TimeSpan.FromSeconds(5));
-// ticks == 5
+// ticks == 1 (coalesced)
+```
+
+If you want each period to be observed, advance in steps:
+
+```csharp
+var tp = new SimulatedTimeProvider();
+var ticks = 0;
+
+using var timer = tp.CreateTimer(_ => ticks++, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+
+tp.Advance(TimeSpan.FromSeconds(1));
+tp.Advance(TimeSpan.FromSeconds(1));
+tp.Advance(TimeSpan.FromSeconds(1));
+// ticks == 3
 ```
 
 ## Instrumentation
 
-`SimulatedTimeProvider` exposes instrumentation counters via `InstrumentationStatistics`:
-
-| Counter | Description |
-|---|---|
-| `AdvanceCallCount` | Number of times `Advance()` was called |
-| `TotalTicksAdvanced` | Total scheduler ticks advanced across all calls |
-| `TimerQueueDepth` | Current number of timers scheduled |
-| `TimersCreated` | Total timers created via `CreateTimer` |
-| `TimersFired` | Total timer callbacks that have fired |
-| `TimersDisposed` | Total timers that have been disposed |
+`SimulatedTimeProvider` exposes lightweight counters via `tp.Statistics` (see [Instrumentation](/guide/instrumentation) for the full list).
 
 ## Running the Demo
 

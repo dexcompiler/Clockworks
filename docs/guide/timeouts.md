@@ -10,6 +10,10 @@ The standard `new CancellationTokenSource(TimeSpan)` overload cancels based on t
 
 Returns a `CancellationTokenSource` that will be cancelled after the given duration elapses according to the provider's scheduler time. **You are responsible for disposing it.**
 
+::: tip Prefer `CreateTimeoutHandle` for early-cancel scenarios
+`CreateTimeout(...)` does not give you a handle to the underlying timer. If you need to end a timeout early (and ensure the timer is cleaned up), prefer `CreateTimeoutHandle(...)`.
+:::
+
 ```csharp
 var tp = new SimulatedTimeProvider();
 
@@ -33,7 +37,7 @@ tp.Advance(TimeSpan.FromSeconds(5));
 // timeout.Token.IsCancellationRequested == true
 ```
 
-When you `Dispose()` the handle before the timeout fires, the timer is cancelled and the token is not cancelled.
+Disposing the handle **cancels** the token (and disposes the underlying timer and token source). This is useful when the timeout lifetime is exactly the scope you control.
 
 ## When to Use Which
 
@@ -41,7 +45,7 @@ When you `Dispose()` the handle before the timeout fires, the timer is cancelled
 |---|---|---|
 | Returns | `CancellationTokenSource` | `IDisposable` handle |
 | Token access | `cts.Token` | `handle.Token` |
-| Disposal responsibility | Caller | Automatic on `Dispose()` |
+| Disposal responsibility | Caller | Dispose the handle (cancels + cleans up) |
 | Best for | When you need full `CancellationTokenSource` control | When the handle lifetime == the scope |
 
 ::: warning Non-positive durations

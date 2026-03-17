@@ -57,6 +57,23 @@ var factory = new UuidV7Factory(TimeProvider.System);
 var id = factory.NewGuid();
 ```
 
+### Dependency injection (ASP.NET Core)
+
+Clockworks includes DI helpers for registering factories and `TimeProvider`:
+
+```csharp
+using Clockworks;
+using Microsoft.Extensions.DependencyInjection;
+
+var services = new ServiceCollection();
+
+// UUIDv7 factory using system time
+services.AddLockFreeGuidFactory();
+
+// Or: HLC-based factory (also registers IUuidV7Factory)
+services.AddHlcGuidFactory(nodeId: 1, options: HlcOptions.Default);
+```
+
 ### Vector Clock usage
 
 ```csharp

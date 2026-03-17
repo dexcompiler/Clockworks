@@ -11,11 +11,11 @@ A Hybrid Logical Clock (HLC) combines a physical wall-clock timestamp with a log
 | Type | Description |
 |---|---|
 | `HlcTimestamp` | Immutable `(wallTime, counter, nodeId)` tuple with total ordering |
-| `HlcGuidFactory` | Creates `HlcTimestamp` values bound to a `TimeProvider` and node ID |
+| `HlcGuidFactory` | Generates UUIDv7 `Guid` values with HLC semantics; also exposes/witnesses `HlcTimestamp` state |
 | `HlcCoordinator` | Manages `BeforeSend` / `BeforeReceive` coordination for a node |
 | `HlcMessageHeader` | Wire format for propagating an `HlcTimestamp` across service boundaries |
 | `HlcStatistics` | Counters for send/receive operations and drift observations |
-| `HlcClusterRegistry` | Manages a set of `HlcCoordinator` instances for a simulated cluster |
+| `HlcClusterRegistry` | Manages a set of `HlcGuidFactory` nodes for simple cluster simulations |
 
 ## Timestamp Structure
 
@@ -65,7 +65,7 @@ var b = new HlcCoordinator(bFactory);
 // A sends a message
 var t1 = a.BeforeSend();
 var header = new HlcMessageHeader(t1, correlationId: Guid.NewGuid());
-var headerValue = header.ToString(); // e.g. "1700000000000.0@1;{guid}"
+var headerValue = header.ToString(); // e.g. "1700000000000.0000@1;d7c3... (N format)"
 
 // B receives the message — witnesses A's timestamp and advances its own
 var parsed = HlcMessageHeader.Parse(headerValue);
@@ -77,6 +77,27 @@ Console.WriteLine(t1 < t2); // true
 ```
 
 `BeforeReceive` witnesses the full remote `HlcTimestamp` including its node ID for tie-breaking.
+
+## HLC GUIDs (UUIDv7 encoding)
+
+`HlcGuidFactory` also generates UUIDv7 `Guid` values that embed the HLC wall time and counter (and a node id field).
+
+```csharp
+using var factory = new HlcGuidFactory(TimeProvider.System, nodeId: 42);
+
+var (guid, hlc) = factory.NewGuidWithHlc();
+Console.WriteLine(guid);
+Console.WriteLine(hlc); // "walltime.counter@node"
+```
+
+You can reconstruct an `HlcTimestamp` from a GUID produced by `HlcGuidFactory`:
+
+```csharp
+var decoded = guid.ToHlcTimestamp();
+Console.WriteLine(decoded?.WallTimeMs);
+Console.WriteLine(decoded?.Counter);
+Console.WriteLine(decoded?.NodeId); // node id is stored in 14 bits in the UUID
+```
 
 ## Drift Configuration
 
@@ -99,6 +120,12 @@ using var highThroughput = new HlcGuidFactory(tp, nodeId: 1, options: new HlcOpt
     ThrowOnExcessiveDrift = false
 });
 ```
+
+Clockworks also provides a few ready-made presets:
+
+- `HlcOptions.Strict`
+- `HlcOptions.Default`
+- `HlcOptions.HighThroughput`
 
 ## Trade-offs
 
