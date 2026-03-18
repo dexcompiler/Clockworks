@@ -1,0 +1,5 @@
+# This directory holds static assets served at the site root.
+# logo.png is generated at CI time from assets/clockworks-display-resized.png
+# and is excluded from git via docs/.gitignore.
+# To run the site locally, copy the logo first:
+#   cp ../assets/clockworks-display-resized.png public/logo.png
