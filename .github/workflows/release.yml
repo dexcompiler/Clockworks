@@ -82,10 +82,23 @@ jobs:
           -p:PackageVersion=${{ steps.vars.outputs.version }}
           -o artifacts/packages
 
+      - name: Validate NuGet API key
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        shell: bash
+        run: |
+          if [[ -z "${NUGET_API_KEY}" ]]; then
+            echo "NUGET_API_KEY secret is missing or empty."
+            echo "Set repository secret NUGET_API_KEY before running release workflow."
+            exit 1
+          fi
+
       - name: Push package to NuGet
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: >
           dotnet nuget push artifacts/packages/*.nupkg
-          --api-key ${{ secrets.NUGET_API_KEY }}
+          --api-key "${NUGET_API_KEY}"
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
 
