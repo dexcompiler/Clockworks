@@ -92,13 +92,13 @@ var header = new VectorClockMessageHeader(
     clock: clockA,
     correlationId: Guid.NewGuid()
 );
-var headerString = header.ToString(); // "1:1;{correlationId}" (example)
+var headerString = header.ToString(); // "1:1;{correlationId:N}" (example)
 ```
 
 ### Hybrid Logical Clock (HLC) propagation
 
 In Clockworks, a "remote timestamp" is the `HlcTimestamp` produced on a different node and carried over the wire
-via `HlcMessageHeader` (format: `walltime.counter@node`). The receiver should call `BeforeReceive(...)` with that
+via `HlcMessageHeader` (format: `walltime.counter@node[;correlationId;causationId]`). The receiver should call `BeforeReceive(...)` with that
 timestamp to preserve causality.
 
 Note: `HlcTimestamp.ToPackedInt64()`/`FromPackedInt64()` is an optimization encoding with a 48-bit wall time and a 4-bit node id (node id is truncated). Use `WriteTo`/`ReadFrom` when you need a full-fidelity representation.
@@ -290,6 +290,10 @@ Clockworks follows Semantic Versioning (SemVer).
 - Package version is defined in `src/Clockworks.csproj`.
 - Release tags use the format `vX.Y.Z` (example: `v1.2.0`).
 - See `CHANGELOG.md` for notable changes.
+- CI runs on pushes/PRs to `main` via `.github/workflows/ci.yml`.
+- Publishing is automated by `.github/workflows/release.yml`:
+  - Trigger by pushing a tag like `v1.3.1` to publish to NuGet and create a GitHub Release.
+  - Or run the workflow manually with `version` input (the matching `vX.Y.Z` tag must already exist).
 
 Build-wide defaults are centralized in `Directory.Build.props`.
 
