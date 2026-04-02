@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+set -eu
+
+message_file="$1"
+tmp_file="${message_file}.tmp"
+
+# Remove auto-injected co-author trailers we do not want in commit history.
+awk '
+{
+  if ($0 ~ /^Co-authored-by:[[:space:]]*Copilot[[:space:]]*<223556219\+Copilot@users\.noreply\.github\.com>[[:space:]]*$/) next
+  if ($0 ~ /^Co-authored-by:[[:space:]]*dexcompiler([[:space:]]*<[^>]+>)?[[:space:]]*$/) next
+  print $0
+}
+' "$message_file" > "$tmp_file"
+
+mv "$tmp_file" "$message_file"
