@@ -1,5 +1,7 @@
 import { defineConfig } from 'vitepress'
 
+const docsVersion = process.env.DOCS_VERSION ?? 'dev'
+
 export default defineConfig({
   base: '/Clockworks/',
   title: 'Clockworks',
@@ -33,7 +35,7 @@ export default defineConfig({
       },
       { text: 'Changelog', link: '/changelog' },
       {
-        text: 'v1.3.0',
+        text: docsVersion,
         link: 'https://github.com/dexcompiler/Clockworks/releases',
         target: '_blank',
       },
