@@ -36,6 +36,12 @@ It is built around `TimeProvider` so that *time becomes an injectable dependency
 - **Lightweight instrumentation**
   - Counters for timers, advances, and timeouts useful in simulation/test assertions
 
+## Installation
+
+```bash
+dotnet add package Clockworks
+```
+
 ## Quick start
 
 ### Deterministic timers with simulated time
