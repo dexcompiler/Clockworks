@@ -5,9 +5,6 @@ hero:
   name: Clockworks
   text: 'Time is just another dependency.'
   tagline: 'Deterministic, fully controllable time and time-ordered identifiers for distributed-system simulations and testing. Built on .NET 10 TimeProvider.'
-  image:
-    src: /logo.png
-    alt: Clockworks
   actions:
     - theme: brand
       text: Get Started
