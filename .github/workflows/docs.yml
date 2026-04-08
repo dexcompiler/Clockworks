@@ -44,20 +44,27 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # For deployment builds (main push or release), resolve the real version and fail if unresolvable.
+          # For deployment builds:
+          # - On release events, use the event's tag name (source of truth for that deployment).
+          # - On main pushes, resolve the latest release tag from GitHub.
           # For pull requests and workflow_dispatch, fall back to "dev" so preview builds still succeed.
-          if [[ "${{ github.event_name }}" == "push" || "${{ github.event_name }}" == "release" ]]; then
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
             VERSION=$(gh release view --repo "${{ github.repository }}" --json tagName -q '.tagName' 2>/dev/null || true)
+          else
+            VERSION="dev"
+          fi
+
+          if [[ "${{ github.event_name }}" == "push" || "${{ github.event_name }}" == "release" ]]; then
             if [[ -z "$VERSION" ]]; then
-              echo "ERROR: Could not resolve latest release version from GitHub." >&2
+              echo "ERROR: Could not resolve docs version." >&2
               exit 1
             fi
             if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               echo "ERROR: Resolved version '$VERSION' does not match expected semver format (vX.Y.Z)." >&2
               exit 1
             fi
-          else
-            VERSION="dev"
           fi
           echo "Resolved docs version: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
