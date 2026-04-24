@@ -76,7 +76,7 @@ public sealed class OrderPipelineWorkloadScenario : IWorkloadScenario
             context.Baselines,
             startedUtc,
             DateTimeOffset.UtcNow,
-            $"dotnet run --project /home/runner/work/Clockworks/Clockworks/demo/Clockworks.Demo -- workloads {Name} --mode {context.RuntimeMode} --seed {context.Seed}");
+            $"dotnet run --project demo/Clockworks.Demo -- workloads {Name} --mode {context.RuntimeMode} --seed {context.Seed}");
     }
 }
 
@@ -196,7 +196,7 @@ public sealed class TimerTimeoutStormWorkloadScenario : IWorkloadScenario
             context.Baselines,
             startedUtc,
             DateTimeOffset.UtcNow,
-            $"dotnet run --project /home/runner/work/Clockworks/Clockworks/demo/Clockworks.Demo -- workloads {Name} --seed {context.Seed}"));
+            $"dotnet run --project demo/Clockworks.Demo -- workloads {Name} --seed {context.Seed}"));
     }
 }
 
@@ -348,7 +348,7 @@ public sealed class UuidHlcHotPathWorkloadScenario : IWorkloadScenario
             context.Baselines,
             startedUtc,
             DateTimeOffset.UtcNow,
-            $"dotnet run --project /home/runner/work/Clockworks/Clockworks/demo/Clockworks.Demo -- workloads {Name} --mode {context.RuntimeMode} --seed {context.Seed}");
+            $"dotnet run --project demo/Clockworks.Demo -- workloads {Name} --mode {context.RuntimeMode} --seed {context.Seed}");
     }
 }
 
@@ -471,7 +471,7 @@ public sealed class CausalFanoutFanInWorkloadScenario : IWorkloadScenario
             context.Baselines,
             startedUtc,
             DateTimeOffset.UtcNow,
-            $"dotnet run --project /home/runner/work/Clockworks/Clockworks/demo/Clockworks.Demo -- workloads {Name} --seed {context.Seed}"));
+            $"dotnet run --project demo/Clockworks.Demo -- workloads {Name} --seed {context.Seed}"));
     }
 }
 
@@ -536,7 +536,7 @@ public sealed class LongRunningSoakWorkloadScenario : IWorkloadScenario
             context.Baselines,
             startedUtc,
             DateTimeOffset.UtcNow,
-            $"dotnet run --project /home/runner/work/Clockworks/Clockworks/demo/Clockworks.Demo -- workloads {Name} --seed {context.Seed}");
+            $"dotnet run --project demo/Clockworks.Demo -- workloads {Name} --seed {context.Seed}");
     }
 }
 

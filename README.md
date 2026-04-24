@@ -239,7 +239,7 @@ dotnet run --project demo/Clockworks.Demo -- timeouts
 dotnet run --project demo/Clockworks.Demo -- simulated-time
 
 # Production-style workload scenarios with machine-readable artifacts
-dotnet run --project demo/Clockworks.Demo -- workloads --baseline /home/runner/work/Clockworks/Clockworks/eng/workloads/baselines.json --output /tmp/clockworks-workloads
+dotnet run --project demo/Clockworks.Demo -- workloads --baseline eng/workloads/baselines.json --output /tmp/clockworks-workloads
 
 # Propagating HLC across service boundaries (header format)
 dotnet run --project demo/Clockworks.Demo -- hlc-messaging

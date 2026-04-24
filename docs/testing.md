@@ -44,7 +44,7 @@ For more detail (invariants covered, project structure), see `property-tests/REA
 For data-intensive, production-style simulations, use the workload runner in the demo project:
 
 ```bash
-dotnet run --project demo/Clockworks.Demo -- workloads --baseline /home/runner/work/Clockworks/Clockworks/eng/workloads/baselines.json --output /tmp/clockworks-workloads
+dotnet run --project demo/Clockworks.Demo -- workloads --baseline eng/workloads/baselines.json --output /tmp/clockworks-workloads
 ```
 
 This emits structured JSON, markdown summaries, and issue-ready failure reports suitable for nightly automation.

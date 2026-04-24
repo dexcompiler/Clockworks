@@ -403,7 +403,7 @@ public static class WorkloadCommand
     }
 
     public static string BuildReproCommand(string scenario, WorkloadExecutionContext context) =>
-        $"dotnet run --project /home/runner/work/Clockworks/Clockworks/demo/Clockworks.Demo -- {scenario} --mode {context.RuntimeMode} --seed {context.Seed}";
+        $"dotnet run --project demo/Clockworks.Demo -- workloads {scenario} --mode {context.RuntimeMode} --seed {context.Seed}";
 
     private static void PrintHelp()
     {
