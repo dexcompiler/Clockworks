@@ -1,0 +1,66 @@
+{
+  "scenarios": {
+    "order-pipeline": {
+      "metrics": {
+        "confirmed-rate": {
+          "min": 1.0,
+          "higherIsBetter": true
+        },
+        "causal-violations": {
+          "max": 0.0
+        },
+        "max-in-flight": {
+          "max": 5000.0
+        }
+      }
+    },
+    "timer-timeout-storm": {
+      "metrics": {
+        "completion-rate": {
+          "min": 1.0,
+          "higherIsBetter": true
+        },
+        "max-queue-length": {
+          "max": 15000.0
+        }
+      }
+    },
+    "uuid-hlc-hot-path": {
+      "metrics": {
+        "uuid-ops-per-sec": {
+          "min": 10000.0,
+          "higherIsBetter": true
+        },
+        "hlc-ops-per-sec": {
+          "min": 5000.0,
+          "higherIsBetter": true
+        },
+        "drift-failures": {
+          "max": 0.0
+        }
+      }
+    },
+    "causal-fanout-fanin": {
+      "metrics": {
+        "concurrent-pairs": {
+          "min": 1.0,
+          "higherIsBetter": true
+        },
+        "max-vector-entries": {
+          "max": 32.0
+        }
+      }
+    },
+    "soak-bounded-growth": {
+      "metrics": {
+        "confirmed-rate": {
+          "min": 1.0,
+          "higherIsBetter": true
+        },
+        "max-retained-dedupe": {
+          "max": 768.0
+        }
+      }
+    }
+  }
+}

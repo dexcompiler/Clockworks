@@ -1,4 +1,5 @@
 using Clockworks.Demo.Demos;
+using Clockworks.Demo.Workloads;
 
 namespace Clockworks.Demo;
 
@@ -14,5 +15,6 @@ internal static class DemoCatalog
             ["hlc-messaging"] = HlcMessagingShowcase.Run,
             ["hlc-coordinator"] = HlcCoordinatorShowcase.Run,
             ["ds-atleastonce"] = DistributedAtLeastOnceCausalityShowcase.Run,
+            ["workloads"] = args => WorkloadCommand.RunAsync(args),
         };
 }

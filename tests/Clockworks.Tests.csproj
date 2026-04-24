@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\src\Clockworks.csproj" />
+    <ProjectReference Include="..\demo\Clockworks.Demo\Clockworks.Demo.csproj" />
   </ItemGroup>
 
 </Project>

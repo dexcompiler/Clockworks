@@ -1,0 +1,111 @@
+name: Workload Scenarios
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+    inputs:
+      runtime_mode:
+        description: Runtime mode to use
+        required: false
+        default: simulated
+        type: choice
+        options:
+          - simulated
+          - system
+      scenario:
+        description: Scenario name or 'all'
+        required: false
+        default: all
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: workload-scenarios-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  run-workloads:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore Clockworks.sln
+
+      - name: Build
+        run: dotnet build Clockworks.sln -c Release --no-restore
+
+      - name: Run workload scenarios
+        id: run_workloads
+        continue-on-error: true
+        run: |
+          mkdir -p artifacts/workloads
+          dotnet run --project demo/Clockworks.Demo -c Release -- workloads \
+            "${{ inputs.scenario || 'all' }}" \
+            --mode "${{ inputs.runtime_mode || 'simulated' }}" \
+            --seed 12345 \
+            --baseline "${{ github.workspace }}/eng/workloads/baselines.json" \
+            --output "${{ github.workspace }}/artifacts/workloads"
+
+      - name: Add workload summary
+        if: always()
+        run: |
+          if [[ -f artifacts/workloads/summary.md ]]; then
+            cat artifacts/workloads/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload workload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workload-scenarios
+          path: artifacts/workloads
+
+      - name: Create GitHub issues for failures
+        if: always() && steps.run_workloads.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import pathlib
+          import subprocess
+          import sys
+
+          issues_dir = pathlib.Path("artifacts/workloads/issues")
+          if not issues_dir.exists():
+              sys.exit(0)
+
+          existing = subprocess.check_output(
+              ["gh", "issue", "list", "--state", "open", "--limit", "200", "--json", "title", "--repo", "${{ github.repository }}"],
+              text=True,
+          )
+
+          import json
+          titles = {item["title"] for item in json.loads(existing)}
+
+          for path in issues_dir.glob("*.md"):
+              title = path.read_text(encoding="utf-8").splitlines()[0].removeprefix("# ").strip()
+              if title in titles:
+                  continue
+              subprocess.check_call([
+                  "gh", "issue", "create",
+                  "--repo", "${{ github.repository }}",
+                  "--title", title,
+                  "--body-file", str(path),
+              ])
+          PY
+
+      - name: Fail workflow when scenarios detect problems
+        if: always() && steps.run_workloads.outcome == 'failure'
+        run: exit 1

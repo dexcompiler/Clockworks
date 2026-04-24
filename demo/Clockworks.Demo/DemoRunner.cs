@@ -45,7 +45,7 @@ internal static class DemoRunner
             Console.WriteLine($"  {name}");
         }
         Console.WriteLine();
-        Console.WriteLine("Note: demos are run explicitly one at a time (no 'all' mode).");
+        Console.WriteLine("Note: demos are run explicitly one at a time, except 'workloads' which can run all scenarios.");
         Console.WriteLine();
     }
 

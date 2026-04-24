@@ -238,6 +238,9 @@ dotnet run --project demo/Clockworks.Demo -- timeouts
 # Simulated timers, periodic coalescing, and scheduler statistics
 dotnet run --project demo/Clockworks.Demo -- simulated-time
 
+# Production-style workload scenarios with machine-readable artifacts
+dotnet run --project demo/Clockworks.Demo -- workloads --baseline /home/runner/work/Clockworks/Clockworks/eng/workloads/baselines.json --output /tmp/clockworks-workloads
+
 # Propagating HLC across service boundaries (header format)
 dotnet run --project demo/Clockworks.Demo -- hlc-messaging
 
@@ -282,6 +285,25 @@ curl -X POST "http://localhost:5000/simulate?mode=System"
 # Tweak knobs
 curl -X POST "http://localhost:5000/simulate?mode=Simulated&orders=10&tickMs=5&maxSteps=20000"
 ```
+
+### Workload scenarios and actionable signals
+
+`demo/Clockworks.Demo -- workloads` runs repeatable, production-style scenarios that stress:
+
+- at-least-once order processing with retries and deduplication
+- timer/timeout storms
+- UUIDv7 / HLC hot paths
+- causal fan-out / fan-in across many nodes
+- long-running bounded-growth soak behavior
+
+The runner emits:
+
+- `workload-report.json` with scenario metrics, invariants, and findings
+- per-scenario `result.json` files
+- `summary.md` for CI step summaries
+- issue-ready markdown files under `issues/` for failed/regressed scenarios
+
+Nightly and on-demand automation lives in `.github/workflows/workload-scenarios.yml`.
 
 ## Package
 
