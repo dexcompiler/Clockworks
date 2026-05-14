@@ -26,6 +26,9 @@ public sealed class HlcClusterRegistry
     /// Unique 14-bit node identifier (0-16383) encoded into generated HLC UUIDv7 values.
     /// </param>
     /// <param name="options">HLC drift and overflow behavior options.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="nodeId"/> exceeds <see cref="HlcGuidFactory.MaxNodeId"/>.
+    /// </exception>
     public HlcGuidFactory RegisterNode(ushort nodeId, HlcOptions? options = null)
     {
         return _nodes.GetOrAdd(nodeId, id => new HlcGuidFactory(_sharedTimeProvider, id, options));

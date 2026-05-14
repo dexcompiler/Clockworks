@@ -7,6 +7,9 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Changed
+- `HlcGuidFactory` constructor now enforces a 14-bit node ID constraint and throws `ArgumentOutOfRangeException` for values above `HlcGuidFactory.MaxNodeId` (16383). Previously, higher values were silently truncated in generated UUIDv7 values.
+
 ## [1.3.0] - 2026-02-19
 
 ### Fixed
