@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -37,11 +39,43 @@ jobs:
         working-directory: docs
         run: npm ci
 
+      - name: Resolve latest release version
+        id: resolve_version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # For deployment builds:
+          # - On release events, use the event's tag name (source of truth for that deployment).
+          # - On main pushes, resolve the latest release tag from GitHub.
+          # For pull requests and workflow_dispatch, fall back to "dev" so preview builds still succeed.
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            VERSION=$(gh release view --repo "${{ github.repository }}" --json tagName -q '.tagName' 2>/dev/null || true)
+          else
+            VERSION="dev"
+          fi
+
+          if [[ "${{ github.event_name }}" == "push" || "${{ github.event_name }}" == "release" ]]; then
+            if [[ -z "$VERSION" ]]; then
+              echo "ERROR: Could not resolve docs version." >&2
+              exit 1
+            fi
+            if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "ERROR: Resolved version '$VERSION' does not match expected semver format (vX.Y.Z)." >&2
+              exit 1
+            fi
+          fi
+          echo "Resolved docs version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Prepare logo asset
         run: cp assets/clockworks-display-resized.png docs/public/logo.png
 
       - name: Build VitePress site
         working-directory: docs
+        env:
+          DOCS_VERSION: ${{ steps.resolve_version.outputs.version }}
         run: npm run docs:build
 
       - name: Upload Pages artifact
@@ -51,7 +85,7 @@ jobs:
 
   deploy:
     needs: build
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'release'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

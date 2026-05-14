@@ -10,6 +10,16 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 ### Changed
 - `HlcGuidFactory` constructor now enforces a 14-bit node ID constraint and throws `ArgumentOutOfRangeException` for values above `HlcGuidFactory.MaxNodeId` (16383). Previously, higher values were silently truncated in generated UUIDv7 values.
 
+## [1.3.1] - 2026-04-02
+
+### Build
+- Add GitHub Actions CI workflow for pushes and pull requests to `main`.
+- Add tag-driven release workflow to publish NuGet packages and create GitHub Releases.
+- Remove `setup-dotnet` lock-file caching requirement from workflows (no `packages.lock.json` needed).
+
+### Infrastructure
+- Add a repository `commit-msg` hook under `.githooks/` to strip auto-injected `Co-authored-by` trailers for Copilot/dexcompiler identities.
+
 ## [1.3.0] - 2026-02-19
 
 ### Fixed
@@ -57,6 +67,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 ### Build
 - Centralized common build properties in `Directory.Build.props`.
 
-[Unreleased]: https://github.com/dexcompiler/Clockworks/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/dexcompiler/Clockworks/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/dexcompiler/Clockworks/releases/tag/v1.3.1
 [1.3.0]: https://github.com/dexcompiler/Clockworks/releases/tag/v1.3.0
 [1.2.0]: https://github.com/dexcompiler/Clockworks/releases/tag/v1.2.0
