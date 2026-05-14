@@ -71,6 +71,7 @@ var services = new ServiceCollection();
 services.AddLockFreeGuidFactory();
 
 // Or: HLC-based factory (also registers IUuidV7Factory)
+// nodeId is encoded into HLC UUIDv7 values and must be in 0..HlcGuidFactory.MaxNodeId (0..16383)
 services.AddHlcGuidFactory(nodeId: 1, options: HlcOptions.Default);
 ```
 

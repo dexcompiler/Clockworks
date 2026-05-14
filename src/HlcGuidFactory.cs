@@ -376,7 +376,7 @@ public sealed class HlcGuidFactory : IHlcGuidFactory, IDisposable
         BinaryPrimitives.WriteUInt16BigEndian(bytes.Slice(6, 2), timestamp.Counter);
         bytes[6] = (byte)(Version7 | (bytes[6] & VersionMask));
 
-        // Bytes 8-9: variant (2 bits) + node ID high bits (14 bits across bytes 8-9)
+        // Bytes 8-9: variant (2 bits) + node ID (14 bits across bytes 8-9)
         // We encode node ID in the "random" portion for correlation
         BinaryPrimitives.WriteUInt16BigEndian(bytes.Slice(8, 2), timestamp.NodeId);
         bytes[8] = (byte)(VariantRfc4122 | (bytes[8] & VariantMask));

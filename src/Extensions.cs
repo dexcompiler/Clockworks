@@ -49,6 +49,8 @@ public static class ServiceCollectionExtensions
         /// Adds the HLC GUID factory with system time.
         /// Use this for distributed systems requiring causal ordering.
         /// </summary>
+        /// <param name="nodeId">Unique 14-bit node identifier (0-16383) encoded into generated HLC UUIDv7 values.</param>
+        /// <param name="options">HLC drift and overflow behavior options.</param>
         public IServiceCollection AddHlcGuidFactory(
             ushort nodeId = 0,
             HlcOptions? options = null)
@@ -68,6 +70,10 @@ public static class ServiceCollectionExtensions
         /// Adds the HLC GUID factory with a custom TimeProvider.
         /// Use this for testing or simulation.
         /// </summary>
+        /// <param name="timeProvider">Time source used by the HLC factory.</param>
+        /// <param name="nodeId">Unique 14-bit node identifier (0-16383) encoded into generated HLC UUIDv7 values.</param>
+        /// <param name="options">HLC drift and overflow behavior options.</param>
+        /// <param name="rng">Random number generator used for the UUID random tail.</param>
         public IServiceCollection AddHlcGuidFactory(
             TimeProvider timeProvider,
             ushort nodeId = 0,

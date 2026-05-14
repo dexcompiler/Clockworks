@@ -80,7 +80,7 @@ Console.WriteLine(t1 < t2); // true
 
 ## HLC GUIDs (UUIDv7 encoding)
 
-`HlcGuidFactory` also generates UUIDv7 `Guid` values that embed the HLC wall time and counter (and a node id field).
+`HlcGuidFactory` also generates UUIDv7 `Guid` values that embed the HLC wall time and counter, plus a 14-bit node ID field. Node IDs must be in the range `0..HlcGuidFactory.MaxNodeId` (`0..16383`) because the UUID variant consumes the top two bits of the UUID bytes that carry the node field.
 
 ```csharp
 using var factory = new HlcGuidFactory(TimeProvider.System, nodeId: 42);
@@ -98,6 +98,8 @@ Console.WriteLine(decoded?.WallTimeMs);
 Console.WriteLine(decoded?.Counter);
 Console.WriteLine(decoded?.NodeId); // node id is stored in 14 bits in the UUID
 ```
+
+`HlcTimestamp` itself can still represent a full `ushort` node ID in its canonical 80-bit `WriteTo` / `ReadFrom` format. The 14-bit limit applies specifically to node IDs used with `HlcGuidFactory`, where the node ID must be recoverable from an RFC-compatible UUIDv7 value.
 
 ## Drift Configuration
 
