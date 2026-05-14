@@ -132,6 +132,8 @@ var t2 = b.BeforeSend();
 Console.WriteLine(t1 < t2); // true
 ```
 
+When using `HlcGuidFactory`, `nodeId` is encoded into generated UUIDv7 values as a 14-bit field. Use values in `0..HlcGuidFactory.MaxNodeId` (`0..16383`); larger values are rejected because the UUID variant bits leave only 14 recoverable node-id bits.
+
 ## Distributed Systems Support
 
 ### Hybrid Logical Clock (HLC)

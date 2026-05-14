@@ -55,6 +55,11 @@ namespace Clockworks;
 /// </summary>
 public sealed class HlcGuidFactory : IHlcGuidFactory, IDisposable
 {
+    /// <summary>
+    /// Maximum node identifier that can be encoded in an HLC UUIDv7 value.
+    /// </summary>
+    public const ushort MaxNodeId = 0x3FFF;
+
     private readonly TimeProvider _timeProvider;
     private readonly RandomNumberGenerator _rng;
     private readonly bool _ownsRng;
@@ -82,9 +87,13 @@ public sealed class HlcGuidFactory : IHlcGuidFactory, IDisposable
     /// Creates a new HLC-based GUID factory.
     /// </summary>
     /// <param name="timeProvider">Time source</param>
-    /// <param name="nodeId">Unique identifier for this node (0-65535)</param>
+    /// <param name="nodeId">Unique 14-bit identifier for this node (0-16383).</param>
     /// <param name="options">HLC configuration options</param>
     /// <param name="rng">Random number generator (null = create new CSPRNG)</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="nodeId"/> exceeds <see cref="MaxNodeId"/> and cannot be encoded in the
+    /// HLC UUIDv7 node field.
+    /// </exception>
     public HlcGuidFactory(
         TimeProvider timeProvider,
         ushort nodeId = 0,
@@ -92,6 +101,14 @@ public sealed class HlcGuidFactory : IHlcGuidFactory, IDisposable
         RandomNumberGenerator? rng = null)
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        if (nodeId > MaxNodeId)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(nodeId),
+                nodeId,
+                $"HLC UUIDv7 node IDs are encoded in 14 bits and must be less than or equal to {MaxNodeId}.");
+        }
+
         _nodeId = nodeId;
         _options = options ?? HlcOptions.Default;
         _rng = rng ?? RandomNumberGenerator.Create();
@@ -359,7 +376,7 @@ public sealed class HlcGuidFactory : IHlcGuidFactory, IDisposable
         BinaryPrimitives.WriteUInt16BigEndian(bytes.Slice(6, 2), timestamp.Counter);
         bytes[6] = (byte)(Version7 | (bytes[6] & VersionMask));
 
-        // Bytes 8-9: variant (2 bits) + node ID high bits (14 bits across bytes 8-9)
+        // Bytes 8-9: variant (2 bits) + node ID (14 bits across bytes 8-9)
         // We encode node ID in the "random" portion for correlation
         BinaryPrimitives.WriteUInt16BigEndian(bytes.Slice(8, 2), timestamp.NodeId);
         bytes[8] = (byte)(VariantRfc4122 | (bytes[8] & VariantMask));

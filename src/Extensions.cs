@@ -49,6 +49,8 @@ public static class ServiceCollectionExtensions
         /// Adds the HLC GUID factory with system time.
         /// Use this for distributed systems requiring causal ordering.
         /// </summary>
+        /// <param name="nodeId">Unique 14-bit node identifier (0-16383) encoded into generated HLC UUIDv7 values.</param>
+        /// <param name="options">HLC drift and overflow behavior options.</param>
         public IServiceCollection AddHlcGuidFactory(
             ushort nodeId = 0,
             HlcOptions? options = null)
@@ -68,6 +70,10 @@ public static class ServiceCollectionExtensions
         /// Adds the HLC GUID factory with a custom TimeProvider.
         /// Use this for testing or simulation.
         /// </summary>
+        /// <param name="timeProvider">Time source used by the HLC factory.</param>
+        /// <param name="nodeId">Unique 14-bit node identifier (0-16383) encoded into generated HLC UUIDv7 values.</param>
+        /// <param name="options">HLC drift and overflow behavior options.</param>
+        /// <param name="rng">Random number generator used for the UUID random tail.</param>
         public IServiceCollection AddHlcGuidFactory(
             TimeProvider timeProvider,
             ushort nodeId = 0,
@@ -141,7 +147,7 @@ public static class GuidExtensions
         }
 
         /// <summary>
-        /// For HLC-encoded UUIDv7s, extracts the node ID.
+        /// For HLC-encoded UUIDv7s, extracts the 14-bit node ID.
         /// Returns null if not a valid UUIDv7 or node ID not encoded.
         /// </summary>
         public ushort? GetNodeId()
@@ -152,7 +158,7 @@ public static class GuidExtensions
             if ((bytes[6] & 0xF0) != 0x70)
                 return null;
 
-            // Node ID is in bytes 8-9 (after variant bits)
+            // Node ID is in bytes 8-9 after masking off the two RFC variant bits.
             return (ushort)(((bytes[8] & 0x3F) << 8) | bytes[9]);
         }
 
