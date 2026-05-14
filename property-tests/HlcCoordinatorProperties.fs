@@ -7,6 +7,20 @@ open FsCheck.Xunit
 open Clockworks
 open Clockworks.Distributed
 
+/// Property: HLC UUIDv7 encoding preserves every supported 14-bit node ID.
+[<Property(MaxTest = 100)>]
+let ``HlcGuidFactory UUID preserves supported node id`` (nodeId: uint16) =
+    let safeNodeId = nodeId &&& HlcGuidFactory.MaxNodeId
+    let timeProvider = new SimulatedTimeProvider()
+    use factory = new HlcGuidFactory(timeProvider, nodeId = safeNodeId)
+
+    let struct (guid, timestamp) = factory.NewGuidWithHlc()
+    let decoded = guid.ToHlcTimestamp()
+
+    timestamp.NodeId = safeNodeId
+    && decoded.HasValue
+    && decoded.Value.NodeId = safeNodeId
+
 /// Property: Sequential sends should always produce increasing timestamps.
 [<Property(MaxTest = 100)>]
 let ``BeforeSend timestamps are strictly increasing`` (advances: uint16 list) =

@@ -141,7 +141,7 @@ public static class GuidExtensions
         }
 
         /// <summary>
-        /// For HLC-encoded UUIDv7s, extracts the node ID.
+        /// For HLC-encoded UUIDv7s, extracts the 14-bit node ID.
         /// Returns null if not a valid UUIDv7 or node ID not encoded.
         /// </summary>
         public ushort? GetNodeId()
@@ -152,7 +152,7 @@ public static class GuidExtensions
             if ((bytes[6] & 0xF0) != 0x70)
                 return null;
 
-            // Node ID is in bytes 8-9 (after variant bits)
+            // Node ID is in bytes 8-9 after masking off the two RFC variant bits.
             return (ushort)(((bytes[8] & 0x3F) << 8) | bytes[9]);
         }
 
