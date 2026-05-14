@@ -2,7 +2,7 @@
 
 namespace Clockworks.Demo;
 
-// <summary>
+/// <summary>
 /// Deterministic pseudo-random number generator for test replay and simulation.
 /// 
 /// <para>
@@ -16,10 +16,9 @@ namespace Clockworks.Demo;
 /// </para>
 /// 
 /// <para>
-/// <b>Mathematical Basis:</b>
-/// Uses .NET's implementation of xoshiro256** algorithm internally.
-/// Period: 2^256 - 1
-/// Good statistical properties for testing, but predictable.
+/// <b>Implementation Notes:</b>
+/// Uses <see cref="Random"/> internally. The exact PRNG algorithm is a runtime detail and may change between .NET
+/// versions. Determinism is intended for same-runtime replay in tests/simulations, not cross-version reproducibility.
 /// </para>
 /// </summary>
 internal sealed class DeterministicRandomNumberGenerator : RandomNumberGenerator

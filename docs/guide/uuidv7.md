@@ -70,11 +70,13 @@ For high-assurance shared namespaces, use a storage uniqueness constraint as the
 
 ## Custom RNGs and Deterministic Tests
 
-Custom RNG injection exists so tests and simulations can replay exact UUID sequences. Identical deterministic RNG state, identical time, and identical call patterns intentionally produce identical UUIDv7 output:
+Custom RNG injection exists so tests and simulations can replay exact UUID sequences. Clockworks does not ship a deterministic RNG implementation; provide your own test-only `RandomNumberGenerator` when you need replay.
+
+Identical deterministic RNG state, identical time, and identical call patterns intentionally produce identical UUIDv7 output:
 
 ```csharp
 var time = SimulatedTimeProvider.FromUnixMs(1_700_000_000_000);
-using var rng = new DeterministicRandomNumberGenerator(seed: 42);
+using RandomNumberGenerator rng = new MyDeterministicTestRng(seed: 42); // your test-only implementation
 using var factory = new UuidV7Factory(time, rng);
 ```
 
