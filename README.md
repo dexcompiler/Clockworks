@@ -77,6 +77,8 @@ var id = factory.NewGuid();
 
 For production services, prefer one shared `UuidV7Factory` instance per process. Its monotonic `(timestamp, counter)` allocation is deterministic within that live factory, including when wall time moves backwards. Independent factories, restarts, and multi-node fleets do not share that logical frontier; global uniqueness remains probabilistic and should be backed by storage uniqueness constraints where collisions are unacceptable.
 
+`UuidV7Factory` owns a cryptographically secure RNG by default. Custom deterministic RNGs are useful for replayable tests and simulations, but identical deterministic RNG state plus identical time and call patterns can intentionally reproduce the same UUID sequence. Do not use seeded or deterministic RNGs for production UUID issuance.
+
 ### Vector Clock usage
 
 ```csharp

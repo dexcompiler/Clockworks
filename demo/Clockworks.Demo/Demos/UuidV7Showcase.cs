@@ -49,6 +49,7 @@ internal static class UuidV7Showcase
         Console.WriteLine($"  Factory 1: {deterministicGuid1}");
         Console.WriteLine($"  Factory 2: {deterministicGuid2}");
         Console.WriteLine($"  Match: {deterministicGuid1 == deterministicGuid2}");
+        Console.WriteLine("  Note: deterministic RNG injection is for tests/simulations, not production UUID issuance.");
         Console.WriteLine();
 
         time1.AdvanceMs(100);

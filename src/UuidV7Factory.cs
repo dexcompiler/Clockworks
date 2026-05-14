@@ -78,7 +78,8 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
     /// <param name="rng">
     /// Random number generator to use for the random portion of the UUID. If <see langword="null"/>, a new
     /// cryptographically-secure RNG is created and owned by this instance. Production deployments should use a
-    /// cryptographically strong RNG with independent state for each factory.
+    /// cryptographically strong RNG with independent state for each factory. Seeded or deterministic RNGs are intended
+    /// only for reproducible tests and simulations.
     /// </param>
     /// <param name="overflowBehavior">Behavior to apply when the per-millisecond counter overflows.</param>
     public UuidV7Factory(

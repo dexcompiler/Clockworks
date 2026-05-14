@@ -15,6 +15,8 @@ var id = factory.NewGuid();
 
 `UuidV7Factory` accepts any `TimeProvider`, including `TimeProvider.System` for production use and `SimulatedTimeProvider` for tests.
 
+By default, each factory owns a cryptographically secure random number generator for UUID random-tail bytes. You can pass a custom `RandomNumberGenerator` for deterministic tests, but production factories should use independent CSPRNG state.
+
 ## With Simulated Time
 
 ```csharp
@@ -65,6 +67,20 @@ This guarantees strict per-instance monotonicity without locks. The guarantee is
 For production services, prefer a single `UuidV7Factory` singleton per process or service instance. The built-in DI helpers register it this way.
 
 For high-assurance shared namespaces, use a storage uniqueness constraint as the final guardrail and retry on conflict. If you need node-aware ordering semantics, consider `HlcGuidFactory`; it embeds a node ID and HLC timestamp, but it should be chosen for causal/node-aware ordering rather than treated as a blanket substitute for storage-level uniqueness.
+
+## Custom RNGs and Deterministic Tests
+
+Custom RNG injection exists so tests and simulations can replay exact UUID sequences. Identical deterministic RNG state, identical time, and identical call patterns intentionally produce identical UUIDv7 output:
+
+```csharp
+var time = SimulatedTimeProvider.FromUnixMs(1_700_000_000_000);
+using var rng = new DeterministicRandomNumberGenerator(seed: 42);
+using var factory = new UuidV7Factory(time, rng);
+```
+
+This is useful for fixtures, demos, and simulation replay. It is not production entropy. In production, leave `rng` as `null` unless you are supplying a cryptographically secure generator with independent state for each factory.
+
+When modeling independent deterministic nodes in tests, derive a separate deterministic RNG stream per node instead of reusing the same seed directly. Reusing the same deterministic stream across factories is a way to model exact replay, not independent UUID issuance.
 
 ## Counter Overflow Behavior
 

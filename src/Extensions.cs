@@ -35,6 +35,12 @@ public static class ServiceCollectionExtensions
         /// Use this for testing or simulation. Registers a singleton factory so per-instance monotonic state is shared
         /// across callers in the process.
         /// </summary>
+        /// <param name="timeProvider">Time source used by the UUIDv7 factory.</param>
+        /// <param name="rng">
+        /// Random number generator used for the UUID random tail. Leave null for a per-factory CSPRNG. Seeded or
+        /// deterministic RNGs are intended only for reproducible tests and simulations.
+        /// </param>
+        /// <param name="overflowBehavior">Behavior to apply when the per-millisecond counter overflows.</param>
         public IServiceCollection AddLockFreeGuidFactory(
             TimeProvider timeProvider,
             RandomNumberGenerator? rng = null,
