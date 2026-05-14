@@ -1,12 +1,27 @@
 module Clockworks.PropertyTests.UuidV7FactoryProperties
 
 open System
+open System.Security.Cryptography
 open System.Threading
 open System.Threading.Tasks
 open Xunit
 open FsCheck
 open FsCheck.Xunit
 open Clockworks
+
+type private DeterministicRandomNumberGenerator(seed: int) =
+    inherit RandomNumberGenerator()
+
+    let random = Random(seed)
+
+    override _.GetBytes(data: byte[]) =
+        random.NextBytes(data)
+
+    override _.GetBytes(data: Span<byte>) =
+        random.NextBytes(data)
+
+    override _.GetBytes(data: byte[], offset: int, count: int) =
+        random.NextBytes(data.AsSpan(offset, count))
 
 /// Property: Sequential UUIDs should maintain monotonic ordering
 [<Property(MaxTest = 100)>]
@@ -24,6 +39,22 @@ let ``Sequential UUIDs are monotonically increasing`` (count: uint16) =
         |> Array.forall (fun (prev, curr) -> prev < curr)
     
     isMonotonic
+
+/// Property: Deterministic RNG injection should replay the same UUID sequence for the same seed/time/call pattern.
+[<Property(MaxTest = 50)>]
+let ``Deterministic RNG replays UUID sequence`` (seed: int) (count: byte) =
+    let safeCount = int (count % 32uy) + 1
+    let startMs = 1_700_000_000_000L
+
+    use leftRng = new DeterministicRandomNumberGenerator(seed)
+    use rightRng = new DeterministicRandomNumberGenerator(seed)
+    use left = new UuidV7Factory(SimulatedTimeProvider.FromUnixMs(startMs), leftRng)
+    use right = new UuidV7Factory(SimulatedTimeProvider.FromUnixMs(startMs), rightRng)
+
+    let leftIds = [| for _ in 1..safeCount -> left.NewGuid() |]
+    let rightIds = [| for _ in 1..safeCount -> right.NewGuid() |]
+
+    leftIds = rightIds
 
 /// Property: UUIDs generated at the same millisecond should differ only in counter/random parts
 [<Property(MaxTest = 50)>]

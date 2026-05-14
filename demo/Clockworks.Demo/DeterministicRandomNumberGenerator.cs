@@ -78,6 +78,21 @@ internal sealed class DeterministicRandomNumberGenerator : RandomNumberGenerator
     /// </summary>
     public DeterministicRandomNumberGenerator Derive(int index)
     {
-        return new DeterministicRandomNumberGenerator(HashCode.Combine(_seed, index));
+        return new DeterministicRandomNumberGenerator(StableMix(_seed, index));
+    }
+
+    private static int StableMix(int seed, int index)
+    {
+        unchecked
+        {
+            var value = (uint)seed + 0x9E37_79B9u;
+            value ^= (uint)index + 0x85EB_CA6Bu + (value << 6) + (value >> 2);
+            value ^= value >> 16;
+            value *= 0x7FEB_352Du;
+            value ^= value >> 15;
+            value *= 0x846C_A68Bu;
+            value ^= value >> 16;
+            return (int)value;
+        }
     }
 }
