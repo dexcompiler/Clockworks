@@ -21,6 +21,7 @@ It is built around `TimeProvider` so that *time becomes an injectable dependency
   - `UuidV7Factory` produces RFC 9562 UUIDv7 values as `Guid`
   - Works with real or simulated time
   - Configurable counter overflow behavior
+  - Per-instance monotonicity under clock rollback; cross-factory uniqueness remains probabilistic unless coordinated externally
 
 - **Hybrid Logical Clock (HLC)**
   - HLC timestamps and utilities to preserve causality in distributed simulations
@@ -73,6 +74,8 @@ tp.Advance(TimeSpan.FromSeconds(5));
 var factory = new UuidV7Factory(TimeProvider.System);
 var id = factory.NewGuid();
 ```
+
+For production services, prefer one shared `UuidV7Factory` instance per process. Its monotonic `(timestamp, counter)` allocation is deterministic within that live factory, including when wall time moves backwards. Independent factories, restarts, and multi-node fleets do not share that logical frontier; global uniqueness remains probabilistic and should be backed by storage uniqueness constraints where collisions are unacceptable.
 
 ### Vector Clock usage
 

@@ -15,7 +15,8 @@ public static class ServiceCollectionExtensions
     {
         /// <summary>
         /// Adds the lock-free GUID factory with system time.
-        /// Use this for most production scenarios.
+        /// Use this for most production scenarios. Registers a singleton factory so per-instance monotonic state is
+        /// shared across callers in the process.
         /// </summary>
         public IServiceCollection AddLockFreeGuidFactory(
             CounterOverflowBehavior overflowBehavior = CounterOverflowBehavior.SpinWait)
@@ -31,7 +32,8 @@ public static class ServiceCollectionExtensions
 
         /// <summary>
         /// Adds the lock-free GUID factory with a custom TimeProvider.
-        /// Use this for testing or simulation.
+        /// Use this for testing or simulation. Registers a singleton factory so per-instance monotonic state is shared
+        /// across callers in the process.
         /// </summary>
         public IServiceCollection AddLockFreeGuidFactory(
             TimeProvider timeProvider,

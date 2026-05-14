@@ -41,13 +41,30 @@ Console.WriteLine(id2.IsVersion7());     // true/false
 
 ## Monotonicity Guarantees
 
-Within a single millisecond, uniqueness and ordering are maintained by a **12-bit monotonic counter** appended to the 48-bit timestamp:
+Within a single factory instance, ordering is maintained by a **12-bit monotonic counter** appended to the 48-bit timestamp:
 
 - When physical time moves to a new millisecond, the counter is reset to a **random start value** (masked into the lower half of the counter space to leave room for increments).
 - Each successive `NewGuid()` within the same millisecond increments the counter.
+- If the wall clock moves backwards, the factory continues from the last logical `(timestamp, counter)` frontier instead of rewinding to the lower physical time.
 - If the counter overflows (4,096 values exhausted), behavior depends on `CounterOverflowBehavior` (spin-wait, increment timestamp, or throw).
 
-This guarantees strict monotonicity without locks.
+This guarantees strict per-instance monotonicity without locks. The guarantee is scoped to the live factory instance, not to every factory in a fleet.
+
+## Collision and Clock-Skew Semantics
+
+`UuidV7Factory` separates local deterministic allocation from distributed probabilistic uniqueness:
+
+| Scope | Guarantee |
+|---|---|
+| One live factory instance | Deterministic, lock-free allocation of unique and monotonically increasing `(timestamp, counter)` pairs. Backward wall-clock movement does not rewind the logical frontier. |
+| Multiple threads sharing one factory | Same per-instance guarantee; CAS retries may occur under contention, but successful allocations do not reuse a pair. |
+| Multiple factories in one process | No shared logical frontier. Full UUID collisions are still extremely unlikely with independent CSPRNG state, but uniqueness is probabilistic. |
+| Multiple processes or machines | No built-in global coordination or node discriminator in `UuidV7Factory`. Clock skew can increase timestamp overlap, while uniqueness depends on randomized counter starts and the 62-bit random tail. |
+| Process restart | The new factory starts from current wall time and a random counter start. It does not inherit the previous logical frontier. |
+
+For production services, prefer a single `UuidV7Factory` singleton per process or service instance. The built-in DI helpers register it this way.
+
+For high-assurance shared namespaces, use a storage uniqueness constraint as the final guardrail and retry on conflict. If you need node-aware ordering semantics, consider `HlcGuidFactory`; it embeds a node ID and HLC timestamp, but it should be chosen for causal/node-aware ordering rather than treated as a blanket substitute for storage-level uniqueness.
 
 ## Counter Overflow Behavior
 

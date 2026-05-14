@@ -10,6 +10,22 @@ This page mirrors the repository root `CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Changed
+- `HlcGuidFactory` constructor now enforces a 14-bit node ID constraint and throws `ArgumentOutOfRangeException` for values above `HlcGuidFactory.MaxNodeId` (16383). Previously, higher values were silently truncated in generated UUIDv7 values.
+
+### Documentation
+- Clarify `UuidV7Factory` collision and clock-skew guarantees, including the distinction between per-instance deterministic monotonicity and probabilistic cross-factory uniqueness.
+
+## [1.3.1] - 2026-04-02
+
+### Build
+- Add GitHub Actions CI workflow for pushes and pull requests to `main`.
+- Add tag-driven release workflow to publish NuGet packages and create GitHub Releases.
+- Remove `setup-dotnet` lock-file caching requirement from workflows (no `packages.lock.json` needed).
+
+### Infrastructure
+- Add a repository `commit-msg` hook under `.githooks/` to strip auto-injected `Co-authored-by` trailers for Copilot/dexcompiler identities.
+
 ## [1.3.0] - 2026-02-19
 
 ### Fixed
@@ -56,4 +72,3 @@ This page mirrors the repository root `CHANGELOG.md`.
 
 ### Build
 - Centralized common build properties in `Directory.Build.props`.
-

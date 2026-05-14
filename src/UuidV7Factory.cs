@@ -12,10 +12,19 @@ namespace Clockworks;
 /// <remarks>
 /// Implements RFC 9562 UUID version 7 and returns values as <see cref="Guid"/> with:
 /// 
-/// - Monotonic counter for sub-millisecond ordering
+/// - Per-instance monotonic counter for sub-millisecond ordering
 /// - Lock-free synchronization using CAS operations
 /// - Configurable overflow behavior
 /// - TimeProvider integration for testing/simulation
+/// - Cryptographically secure random tail bytes by default
+///
+/// <para>
+/// Guarantee boundary: one live factory instance deterministically allocates unique, monotonically increasing
+/// <c>(timestamp, counter)</c> pairs, including when the supplied <see cref="TimeProvider"/> moves backwards. Global
+/// uniqueness across independent factories, processes, restarts, or machines remains probabilistic and depends on
+/// independent random tail bytes unless the caller adds coordination, node partitioning, or a storage uniqueness
+/// constraint.
+/// </para>
 ///
 /// <para>
 /// <b>UUIDv7 bit layout (RFC 9562):</b>
@@ -68,7 +77,8 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
     /// <param name="timeProvider">Time source (use <see cref="TimeProvider.System"/> for production).</param>
     /// <param name="rng">
     /// Random number generator to use for the random portion of the UUID. If <see langword="null"/>, a new
-    /// cryptographically-secure RNG is created and owned by this instance.
+    /// cryptographically-secure RNG is created and owned by this instance. Production deployments should use a
+    /// cryptographically strong RNG with independent state for each factory.
     /// </param>
     /// <param name="overflowBehavior">Behavior to apply when the per-millisecond counter overflows.</param>
     public UuidV7Factory(
