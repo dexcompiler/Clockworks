@@ -1,5 +1,6 @@
 using Clockworks.Abstractions;
 using Clockworks.Distributed;
+using Clockworks.Instrumentation;
 using System.Security.Cryptography;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -31,6 +32,29 @@ public static class ServiceCollectionExtensions
         }
 
         /// <summary>
+        /// Adds the lock-free GUID factory with system time and opt-in statistics.
+        /// </summary>
+        /// <param name="statistics">Statistics instance updated by the registered singleton factory.</param>
+        /// <param name="overflowBehavior">Behavior to apply when the per-millisecond counter overflows.</param>
+        public IServiceCollection AddLockFreeGuidFactory(
+            UuidV7FactoryStatistics statistics,
+            CounterOverflowBehavior overflowBehavior = CounterOverflowBehavior.SpinWait)
+        {
+            ArgumentNullException.ThrowIfNull(statistics);
+
+            services.TryAddSingleton(TimeProvider.System);
+            services.AddSingleton(statistics);
+            services.AddSingleton<IUuidV7Factory>(sp => new UuidV7Factory(
+                sp.GetRequiredService<TimeProvider>(),
+                rng: null,
+                overflowBehavior: overflowBehavior,
+                statistics: sp.GetRequiredService<UuidV7FactoryStatistics>()));
+            services.AddSingleton(sp => (UuidV7Factory)sp.GetRequiredService<IUuidV7Factory>());
+
+            return services;
+        }
+
+        /// <summary>
         /// Adds the lock-free GUID factory with a custom TimeProvider.
         /// Use this for testing or simulation. Registers a singleton factory so per-instance monotonic state is shared
         /// across callers in the process.
@@ -48,6 +72,33 @@ public static class ServiceCollectionExtensions
         {
             services.TryAddSingleton(timeProvider);
             services.AddSingleton<IUuidV7Factory>(new UuidV7Factory(timeProvider, rng, overflowBehavior));
+            services.AddSingleton(sp => (UuidV7Factory)sp.GetRequiredService<IUuidV7Factory>());
+
+            return services;
+        }
+
+        /// <summary>
+        /// Adds the lock-free GUID factory with a custom TimeProvider and opt-in statistics.
+        /// </summary>
+        /// <param name="timeProvider">Time source used by the UUIDv7 factory.</param>
+        /// <param name="statistics">Statistics instance updated by the registered singleton factory.</param>
+        /// <param name="rng">
+        /// Random number generator used for the UUID random tail. Leave null for a per-factory CSPRNG. Seeded or
+        /// deterministic RNGs are intended only for reproducible tests and simulations.
+        /// </param>
+        /// <param name="overflowBehavior">Behavior to apply when the per-millisecond counter overflows.</param>
+        public IServiceCollection AddLockFreeGuidFactory(
+            TimeProvider timeProvider,
+            UuidV7FactoryStatistics statistics,
+            RandomNumberGenerator? rng = null,
+            CounterOverflowBehavior overflowBehavior = CounterOverflowBehavior.SpinWait)
+        {
+            ArgumentNullException.ThrowIfNull(timeProvider);
+            ArgumentNullException.ThrowIfNull(statistics);
+
+            services.TryAddSingleton(timeProvider);
+            services.AddSingleton(statistics);
+            services.AddSingleton<IUuidV7Factory>(new UuidV7Factory(timeProvider, rng, overflowBehavior, statistics));
             services.AddSingleton(sp => (UuidV7Factory)sp.GetRequiredService<IUuidV7Factory>());
 
             return services;

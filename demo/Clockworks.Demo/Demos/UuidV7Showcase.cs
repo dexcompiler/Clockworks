@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Clockworks;
 using Clockworks.Distributed;
+using Clockworks.Instrumentation;
 
 namespace Clockworks.Demo.Demos;
 
@@ -194,6 +195,7 @@ internal static class UuidV7Showcase
 
         Console.WriteLine();
         Console.WriteLine("Lock-Free Factory (single-threaded):");
+        double disabledNsPerOp;
         using (var factory = new UuidV7Factory(TimeProvider.System))
         {
             var sw = Stopwatch.StartNew();
@@ -206,7 +208,33 @@ internal static class UuidV7Showcase
             var seconds = sw.Elapsed.TotalSeconds;
             var opsPerSec = BenchmarkIterations / seconds;
             var nsPerOp = sw.Elapsed.TotalNanoseconds / BenchmarkIterations;
+            disabledNsPerOp = nsPerOp;
             Console.WriteLine($"  {opsPerSec:N0} ops/sec ({nsPerOp:N1} ns/op)");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Lock-Free Factory + statistics (single-threaded):");
+        {
+            var statistics = new UuidV7FactoryStatistics();
+            using var factory = new UuidV7Factory(
+                TimeProvider.System,
+                rng: null,
+                CounterOverflowBehavior.SpinWait,
+                statistics);
+
+            var sw = Stopwatch.StartNew();
+            for (int i = 0; i < BenchmarkIterations; i++)
+            {
+                _ = factory.NewGuid();
+            }
+            sw.Stop();
+
+            var seconds = sw.Elapsed.TotalSeconds;
+            var opsPerSec = BenchmarkIterations / seconds;
+            var nsPerOp = sw.Elapsed.TotalNanoseconds / BenchmarkIterations;
+            var overhead = (nsPerOp / disabledNsPerOp - 1.0) * 100.0;
+            Console.WriteLine($"  {opsPerSec:N0} ops/sec ({nsPerOp:N1} ns/op, {overhead:N1}% vs disabled)");
+            Console.WriteLine($"  Generated: {statistics.GeneratedCount:N0}, CAS retries: {statistics.CasRetryCount:N0}");
         }
 
         Console.WriteLine();
