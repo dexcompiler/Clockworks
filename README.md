@@ -22,6 +22,7 @@ It is built around `TimeProvider` so that *time becomes an injectable dependency
   - Works with real or simulated time
   - Configurable counter overflow behavior
   - Optional `rand_b` node partitioning for distributed fleets with assigned node/shard IDs
+  - Optional restart frontier state for services that persist and restore the UUIDv7 logical cursor
   - Optional statistics for rollback, overflow, spin-wait, contention, and random-buffer refill diagnostics
   - Per-instance monotonicity under clock rollback; cross-factory uniqueness remains probabilistic unless coordinated externally
 
@@ -77,7 +78,7 @@ var factory = new UuidV7Factory(TimeProvider.System);
 var id = factory.NewGuid();
 ```
 
-For production services, prefer one shared `UuidV7Factory` instance per process. Its monotonic `(timestamp, counter)` allocation is deterministic within that live factory, including when wall time moves backwards. Independent factories, restarts, and multi-node fleets do not share that logical frontier; global uniqueness remains probabilistic and should be backed by storage uniqueness constraints where collisions are unacceptable.
+For production services, prefer one shared `UuidV7Factory` instance per process. Its monotonic `(timestamp, counter)` allocation is deterministic within that live factory, including when wall time moves backwards. Independent factories and multi-node fleets do not share that logical frontier; global uniqueness remains probabilistic and should be backed by storage uniqueness constraints where collisions are unacceptable. Services that need restart-aware monotonicity can persist `UuidV7FactoryState` from `GetState()` and restore it into a later factory.
 
 `UuidV7Factory` owns a cryptographically secure RNG by default. Custom deterministic RNGs are useful for replayable tests and simulations, but identical deterministic RNG state plus identical time and call patterns can intentionally reproduce the same UUID sequence. Do not use seeded or deterministic RNGs for production UUID issuance.
 
