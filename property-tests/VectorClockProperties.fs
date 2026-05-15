@@ -94,3 +94,11 @@ let ``Merge is monotone with respect to inputs`` (a: VectorClock) (b: VectorCloc
 let ``Increment is stable under merge with original`` (clock: VectorClock) (nodeId: uint16) =
     let inc = clock.Increment(nodeId)
     clock.Merge(inc) = inc && inc.Merge(clock) = inc
+
+/// Property: explicit zero counters are the same as absent entries in canonical form
+[<Property>]
+let ``Zero counter entries canonicalize to absence`` (nodeId: uint16) =
+    let clock = VectorClock.Parse(string nodeId + ":0")
+    clock = VectorClock()
+    && clock.Get(nodeId) = 0UL
+    && clock.ToString() = ""

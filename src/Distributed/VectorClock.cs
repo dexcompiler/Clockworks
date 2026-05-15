@@ -351,7 +351,8 @@ public readonly struct VectorClock : IEquatable<VectorClock>
 
     /// <summary>
     /// Reads a vector clock from its binary representation.
-    /// Automatically deduplicates entries by taking the maximum counter value for duplicate node IDs.
+    /// Automatically deduplicates entries by taking the maximum counter value for duplicate node IDs and dropping
+    /// zero-counter entries.
     /// </summary>
     public static VectorClock ReadFrom(ReadOnlySpan<byte> source)
     {
@@ -373,6 +374,7 @@ public readonly struct VectorClock : IEquatable<VectorClock>
 
         var nodeIds = new ushort[countValue];
         var counters = new ulong[countValue];
+        var hasZeroCounter = false;
 
         var offset = 4;
         for (var i = 0; i < countValue; i++)
@@ -380,6 +382,7 @@ public readonly struct VectorClock : IEquatable<VectorClock>
             nodeIds[i] = BinaryPrimitives.ReadUInt16BigEndian(source.Slice(offset, 2));
             offset += 2;
             counters[i] = BinaryPrimitives.ReadUInt64BigEndian(source.Slice(offset, 8));
+            hasZeroCounter |= counters[i] == 0;
             offset += 8;
         }
 
@@ -393,7 +396,7 @@ public readonly struct VectorClock : IEquatable<VectorClock>
             }
         }
 
-        if (isSortedUnique)
+        if (isSortedUnique && !hasZeroCounter)
             return new VectorClock(nodeIds, counters);
 
         var pairs = new List<(ushort nodeId, ulong counter)>(nodeIds.Length);
@@ -458,12 +461,18 @@ public readonly struct VectorClock : IEquatable<VectorClock>
         if (pairs.Count == 1)
         {
             var (nodeId, counter) = pairs[0];
+            if (counter == 0)
+                return new VectorClock();
+
             return new VectorClock([nodeId], [counter]);
         }
 
         var maxByNodeId = new Dictionary<ushort, ulong>(capacity: pairs.Count);
         foreach (var (nodeId, counter) in pairs)
         {
+            if (counter == 0)
+                continue;
+
             ref var existing = ref CollectionsMarshal.GetValueRefOrAddDefault(maxByNodeId, nodeId, out var exists);
             if (!exists || counter > existing)
                 existing = counter;
