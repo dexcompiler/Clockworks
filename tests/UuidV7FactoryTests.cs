@@ -174,6 +174,47 @@ public sealed class UuidV7FactoryTests
     }
 
     [Fact]
+    public void OverflowBehavior_ThrowException_ThrowsWhenLogicalTimeIsAheadAndCounterOverflows()
+    {
+        const long startMs = 1_700_000_000_000;
+        var time = SimulatedTimeProvider.FromUnixMs(startMs - 10);
+        var restoredState = new UuidV7FactoryState(startMs, UuidV7FactoryState.MaxCounter);
+        using var rng = new DeterministicRandomNumberGenerator(seed: 1);
+        using var factory = new UuidV7Factory(
+            time,
+            restoredState,
+            rng,
+            overflowBehavior: CounterOverflowBehavior.ThrowException);
+
+        Assert.Throws<InvalidOperationException>(() => factory.NewGuid());
+    }
+
+    [Fact]
+    public async Task OverflowBehavior_SpinWait_WaitsUntilPhysicalTimePassesLogicalFrontier()
+    {
+        const long startMs = 1_700_000_000_000;
+        var time = SimulatedTimeProvider.FromUnixMs(startMs - 10);
+        var restoredState = new UuidV7FactoryState(startMs, UuidV7FactoryState.MaxCounter);
+        using var rng = new DeterministicRandomNumberGenerator(seed: 1);
+        using var factory = new UuidV7Factory(
+            time,
+            restoredState,
+            rng,
+            overflowBehavior: CounterOverflowBehavior.SpinWait);
+
+        var pending = Task.Run(factory.NewGuid);
+        var earlyWinner = await Task.WhenAny(pending, Task.Delay(TimeSpan.FromMilliseconds(25)));
+        Assert.NotSame(pending, earlyWinner);
+
+        time.SetUnixMs(startMs + 1);
+
+        var winner = await Task.WhenAny(pending, Task.Delay(TimeSpan.FromSeconds(5)));
+        Assert.Same(pending, winner);
+        var id = await pending;
+        Assert.Equal(startMs + 1, id.GetTimestampMs());
+    }
+
+    [Fact]
     public void OverflowBehavior_Auto_UsesIncrementTimestamp_ForSimulatedTimeProvider()
     {
         var time = SimulatedTimeProvider.FromUnixMs(1_700_000_000_000);

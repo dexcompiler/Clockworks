@@ -16,6 +16,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - Add opt-in `UuidV7FactoryState` restart frontier snapshots for services that persist and restore UUIDv7 logical cursors.
 
 ### Changed
+- `UuidV7Factory` now applies `CounterOverflowBehavior` consistently when logical time is ahead of physical time and the 12-bit counter is exhausted.
 - `HlcGuidFactory` constructor now enforces a 14-bit node ID constraint and throws `ArgumentOutOfRangeException` for values above `HlcGuidFactory.MaxNodeId` (16383). Previously, higher values were silently truncated in generated UUIDv7 values.
 
 ### Documentation

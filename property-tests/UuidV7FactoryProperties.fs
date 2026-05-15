@@ -245,7 +245,11 @@ let ``Restored state is a monotonic lower bound`` (counter: uint16) (rollbackMs:
     let stateMs = 1_700_000_000_000L
     let restoredState = UuidV7FactoryState(stateMs, safeCounter)
     let timeProvider = SimulatedTimeProvider.FromUnixMs(stateMs - safeRollbackMs)
-    use factory = new UuidV7Factory(timeProvider, restoredState)
+    use factory =
+        new UuidV7Factory(
+            timeProvider,
+            restoredState,
+            overflowBehavior = CounterOverflowBehavior.IncrementTimestamp)
 
     let uuid = factory.NewGuid()
     let timestamp = uuid.GetTimestampMs().Value

@@ -130,7 +130,7 @@ Important operational limits:
 - Persist state after the UUIDs it covers are durably committed. A crash after issuing a UUID but before persisting the new state can still lose the last frontier.
 - Restored state coordinates one replacement factory. It does not coordinate multiple live factories restoring the same cursor.
 - Use node partitioning, `HlcGuidFactory`, external allocation, or storage uniqueness constraints when multiple writers share a namespace.
-- If you restore a same-millisecond max-counter state with `SpinWait`, the next allocation may wait for physical time to advance. For deterministic simulations, prefer `CounterOverflowBehavior.Auto` or `IncrementTimestamp`.
+- If you restore a max-counter state while physical time is behind the restored logical timestamp, `SpinWait` waits until physical time passes that logical timestamp. For deterministic simulations and large restored drift windows, prefer `CounterOverflowBehavior.Auto` or `IncrementTimestamp`.
 
 See [UUIDv7 Restart State](/concepts/uuidv7-restart-state) for the design notes and failure modes.
 
@@ -203,10 +203,12 @@ var factory = new UuidV7Factory(
 
 | Behavior | Description |
 |---|---|
-| `SpinWait` | Busy-waits until the next millisecond (default) |
+| `SpinWait` | Busy-waits until physical time passes the exhausted logical millisecond (default) |
 | `IncrementTimestamp` | Artificially increments the timestamp to maintain throughput (timestamp may drift ahead) |
 | `ThrowException` | Throws if more than 4096 UUIDs are allocated in a single millisecond |
 | `Auto` | Chooses `IncrementTimestamp` for `SimulatedTimeProvider` (avoids deadlocks), otherwise `SpinWait` |
+
+The same policy applies when logical time is ahead of physical time because of clock rollback or restored restart state. For example, if a restored frontier has `counter = 4095` and physical time is still behind that frontier, `SpinWait` waits for physical catch-up, `IncrementTimestamp` advances logical time, and `ThrowException` fails immediately.
 
 ::: warning Simulated time + overflow
 If you use `SimulatedTimeProvider` and generate more than 4096 UUIDs without advancing time, `SpinWait` can deadlock (simulated time won't move forward on its own). For simulations, prefer `Auto` or `IncrementTimestamp`.
