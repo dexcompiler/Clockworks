@@ -77,7 +77,7 @@ public readonly record struct UuidV7NodePartition
         return (ushort)((1 << nodeIdBitWidth) - 1);
     }
 
-    internal static void ValidateBitWidth(byte nodeIdBitWidth)
+    private static void ValidateBitWidth(byte nodeIdBitWidth)
     {
         if (nodeIdBitWidth is < MinNodeIdBitWidth or > MaxNodeIdBitWidth)
         {

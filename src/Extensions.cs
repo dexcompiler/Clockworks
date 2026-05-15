@@ -168,7 +168,7 @@ public static class ServiceCollectionExtensions
                 nodePartition,
                 rng,
                 overflowBehavior,
-                statistics));
+                statistics is null ? null : sp.GetRequiredService<UuidV7FactoryStatistics>()));
             services.AddSingleton(sp => (UuidV7Factory)sp.GetRequiredService<IUuidV7Factory>());
 
             return services;
@@ -296,10 +296,13 @@ public static class GuidExtensions
         /// <c>rand_b</c> bits.
         /// </summary>
         /// <param name="nodeIdBitWidth">Number of <c>rand_b</c> bits reserved for the node partition.</param>
-        /// <returns>The node partition ID, or <see langword="null"/> if this GUID is not UUIDv7.</returns>
+        /// <returns>
+        /// The node partition ID, or <see langword="null"/> if this GUID is not UUIDv7 or the bit width is invalid.
+        /// </returns>
         public ushort? GetNodePartitionId(byte nodeIdBitWidth)
         {
-            UuidV7NodePartition.ValidateBitWidth(nodeIdBitWidth);
+            if (nodeIdBitWidth is < UuidV7NodePartition.MinNodeIdBitWidth or > UuidV7NodePartition.MaxNodeIdBitWidth)
+                return null;
 
             Span<byte> bytes = stackalloc byte[16];
             guid.TryWriteBytes(bytes, bigEndian: true, out _);

@@ -78,6 +78,39 @@ public sealed class UuidV7NodePartitionTests
         Assert.Null(Guid.NewGuid().GetNodePartitionId(10));
     }
 
+    [Theory]
+    [InlineData((byte)0)]
+    [InlineData((byte)17)]
+    public void GetNodePartitionId_ReturnsNull_WhenBitWidthInvalid(byte nodeIdBitWidth)
+    {
+        var partition = new UuidV7NodePartition(nodeId: 42, nodeIdBitWidth: 10);
+        var time = SimulatedTimeProvider.FromUnixMs(1_700_000_000_000);
+        using var rng = new DeterministicRandomNumberGenerator(seed: 123);
+        using var factory = new UuidV7Factory(time, partition, rng);
+
+        var guid = factory.NewGuid();
+
+        Assert.Null(guid.GetNodePartitionId(nodeIdBitWidth));
+    }
+
+    [Fact]
+    public void AddNodePartitionedGuidFactory_SystemTime_RegistersSingletonFactory()
+    {
+        var services = new ServiceCollection();
+        var partition = new UuidV7NodePartition(nodeId: 7, nodeIdBitWidth: 10);
+
+        services.AddNodePartitionedGuidFactory(partition);
+
+        using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<IUuidV7Factory>();
+        var concrete = provider.GetRequiredService<UuidV7Factory>();
+        var id = factory.NewGuid();
+
+        Assert.Same(factory, concrete);
+        Assert.Equal(partition, concrete.NodePartition);
+        Assert.Equal((ushort?)7, id.GetNodePartitionId(10));
+    }
+
     [Fact]
     public void AddNodePartitionedGuidFactory_RegistersSingletonFactory()
     {
