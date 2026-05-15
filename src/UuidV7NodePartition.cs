@@ -10,6 +10,13 @@ namespace Clockworks;
 /// </remarks>
 public readonly record struct UuidV7NodePartition
 {
+    private readonly byte _byte8AndMask;
+    private readonly byte _byte8OrValue;
+    private readonly byte _byte9AndMask;
+    private readonly byte _byte9OrValue;
+    private readonly byte _byte10AndMask;
+    private readonly byte _byte10OrValue;
+
     /// <summary>
     /// Number of effective random bits available in UUIDv7 <c>rand_b</c> after the RFC variant bits.
     /// </summary>
@@ -49,6 +56,8 @@ public readonly record struct UuidV7NodePartition
 
         NodeId = nodeId;
         NodeIdBitWidth = nodeIdBitWidth;
+        (_byte8AndMask, _byte8OrValue, _byte9AndMask, _byte9OrValue, _byte10AndMask, _byte10OrValue) =
+            CreateApplyPlan(nodeId, nodeIdBitWidth);
     }
 
     /// <summary>
@@ -90,8 +99,9 @@ public readonly record struct UuidV7NodePartition
 
     internal void ApplyTo(Span<byte> uuidBytes)
     {
-        uuidBytes[8] = (byte)((uuidBytes[8] & 0x3F) | 0x80);
-        WriteNodeId(uuidBytes, NodeId, NodeIdBitWidth);
+        uuidBytes[8] = (byte)((uuidBytes[8] & _byte8AndMask) | _byte8OrValue);
+        uuidBytes[9] = (byte)((uuidBytes[9] & _byte9AndMask) | _byte9OrValue);
+        uuidBytes[10] = (byte)((uuidBytes[10] & _byte10AndMask) | _byte10OrValue);
     }
 
     internal static ushort ReadNodeId(ReadOnlySpan<byte> uuidBytes, byte nodeIdBitWidth)
@@ -121,36 +131,38 @@ public readonly record struct UuidV7NodePartition
         return nodeId;
     }
 
-    private static void WriteNodeId(Span<byte> uuidBytes, ushort nodeId, byte nodeIdBitWidth)
+    private static (byte Byte8AndMask, byte Byte8OrValue, byte Byte9AndMask, byte Byte9OrValue, byte Byte10AndMask, byte Byte10OrValue)
+        CreateApplyPlan(ushort nodeId, byte nodeIdBitWidth)
     {
         if (nodeIdBitWidth <= 6)
         {
             var shift = 6 - nodeIdBitWidth;
-            var mask = ((1 << nodeIdBitWidth) - 1) << shift;
-            var value = nodeId << shift;
-            uuidBytes[8] = (byte)((uuidBytes[8] & ~mask) | value);
-            return;
+            var nodeMask = ((1 << nodeIdBitWidth) - 1) << shift;
+            var byte8AndMask = (byte)(0x3F & ~nodeMask);
+            var byte8Value = (byte)(0x80 | (nodeId << shift));
+            return (byte8AndMask, byte8Value, 0xFF, 0, 0xFF, 0);
         }
 
         var remaining = nodeIdBitWidth - 6;
-        uuidBytes[8] = (byte)((uuidBytes[8] & 0xC0) | ((nodeId >> remaining) & 0x3F));
+        var byte8OrValue = (byte)(0x80 | ((nodeId >> remaining) & 0x3F));
 
         var remainingValue = nodeId & ((1 << remaining) - 1);
         if (remaining <= 8)
         {
             var shift = 8 - remaining;
-            var mask = ((1 << remaining) - 1) << shift;
-            var value = remainingValue << shift;
-            uuidBytes[9] = (byte)((uuidBytes[9] & ~mask) | value);
-            return;
+            var nodeMask = ((1 << remaining) - 1) << shift;
+            var byte9AndMask = (byte)~nodeMask;
+            var byte9PartialValue = (byte)(remainingValue << shift);
+            return (0, byte8OrValue, byte9AndMask, byte9PartialValue, 0xFF, 0);
         }
 
         var finalBits = remaining - 8;
-        uuidBytes[9] = (byte)(remainingValue >> finalBits);
+        var byte9FullValue = (byte)(remainingValue >> finalBits);
 
         var finalShift = 8 - finalBits;
-        var finalMask = ((1 << finalBits) - 1) << finalShift;
-        var finalValue = (remainingValue & ((1 << finalBits) - 1)) << finalShift;
-        uuidBytes[10] = (byte)((uuidBytes[10] & ~finalMask) | finalValue);
+        var finalNodeMask = ((1 << finalBits) - 1) << finalShift;
+        var byte10AndMask = (byte)~finalNodeMask;
+        var byte10OrValue = (byte)((remainingValue & ((1 << finalBits) - 1)) << finalShift);
+        return (0, byte8OrValue, 0, byte9FullValue, byte10AndMask, byte10OrValue);
     }
 }
