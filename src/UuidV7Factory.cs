@@ -53,6 +53,7 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
     private readonly CounterOverflowBehavior _overflowBehavior;
     private readonly CounterOverflowBehavior _effectiveOverflowBehavior;
     private readonly UuidV7FactoryStatistics? _statistics;
+    private readonly UuidV7NodePartition _nodePartition;
 
     // Packed state: [48 bits timestamp][16 bits counter]
     // Using 64-bit atomic operations for lock-free updates
@@ -88,7 +89,7 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
         TimeProvider timeProvider,
         RandomNumberGenerator? rng = null,
         CounterOverflowBehavior overflowBehavior = CounterOverflowBehavior.SpinWait)
-        : this(timeProvider, rng, overflowBehavior, statistics: null)
+        : this(timeProvider, rng, overflowBehavior, statistics: null, nodePartition: default)
     {
     }
 
@@ -109,12 +110,45 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
         RandomNumberGenerator? rng,
         CounterOverflowBehavior overflowBehavior,
         UuidV7FactoryStatistics? statistics)
+        : this(timeProvider, rng, overflowBehavior, statistics, nodePartition: default)
+    {
+    }
+
+    /// <summary>
+    /// Creates a new UUIDv7 generator with an opt-in node partition embedded into <c>rand_b</c>.
+    /// </summary>
+    /// <param name="timeProvider">Time source (use <see cref="TimeProvider.System"/> for production).</param>
+    /// <param name="nodePartition">Node, shard, process, or deployment discriminator to embed in generated UUIDs.</param>
+    /// <param name="rng">
+    /// Random number generator to use for the random portion of the UUID. If <see langword="null"/>, a new
+    /// cryptographically-secure RNG is created and owned by this instance. Production deployments should use a
+    /// cryptographically strong RNG with independent state for each factory.
+    /// </param>
+    /// <param name="overflowBehavior">Behavior to apply when the per-millisecond counter overflows.</param>
+    /// <param name="statistics">Statistics instance to update from this factory, or <see langword="null"/> to disable statistics.</param>
+    public UuidV7Factory(
+        TimeProvider timeProvider,
+        UuidV7NodePartition nodePartition,
+        RandomNumberGenerator? rng = null,
+        CounterOverflowBehavior overflowBehavior = CounterOverflowBehavior.SpinWait,
+        UuidV7FactoryStatistics? statistics = null)
+        : this(timeProvider, rng, overflowBehavior, statistics, nodePartition)
+    {
+    }
+
+    private UuidV7Factory(
+        TimeProvider timeProvider,
+        RandomNumberGenerator? rng,
+        CounterOverflowBehavior overflowBehavior,
+        UuidV7FactoryStatistics? statistics,
+        UuidV7NodePartition nodePartition)
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _rng = rng ?? RandomNumberGenerator.Create();
         _ownsRng = rng is null;
         _overflowBehavior = overflowBehavior;
         _statistics = statistics;
+        _nodePartition = nodePartition;
 
         _effectiveOverflowBehavior = overflowBehavior == CounterOverflowBehavior.Auto
             ? (_timeProvider is SimulatedTimeProvider ? CounterOverflowBehavior.IncrementTimestamp : CounterOverflowBehavior.SpinWait)
@@ -132,6 +166,11 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
     /// Statistics instance updated by this factory, or <see langword="null"/> when statistics are disabled.
     /// </summary>
     public UuidV7FactoryStatistics? Statistics => _statistics;
+
+    /// <summary>
+    /// Node partition embedded into generated UUIDs, or <see langword="null"/> when node partitioning is disabled.
+    /// </summary>
+    public UuidV7NodePartition? NodePartition => _nodePartition.IsConfigured ? _nodePartition : null;
 
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -364,7 +403,10 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
         randomBytes.CopyTo(bytes.Slice(8, 8));
 
         // Set variant bits: 10xxxxxx
-        bytes[8] = (byte)((bytes[8] & VariantMask) | VariantRfc4122);
+        if (_nodePartition.IsConfigured)
+            _nodePartition.ApplyTo(bytes);
+        else
+            bytes[8] = (byte)((bytes[8] & VariantMask) | VariantRfc4122);
 
         return new Guid(bytes, bigEndian: true);
     }
