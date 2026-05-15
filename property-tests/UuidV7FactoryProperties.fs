@@ -240,7 +240,7 @@ let ``Node partitions separate identical deterministic UUID streams`` (rawWidth:
 /// Property: restored UUIDv7 factory state is a monotonic lower bound for future generation.
 [<Property(MaxTest = 50)>]
 let ``Restored state is a monotonic lower bound`` (counter: uint16) (rollbackMs: uint16) =
-    let safeCounter = counter % UuidV7FactoryState.MaxCounter
+    let safeCounter = counter % (UuidV7FactoryState.MaxCounter + 1us)
     let safeRollbackMs = int64 (rollbackMs % 1000us) + 1L
     let stateMs = 1_700_000_000_000L
     let restoredState = UuidV7FactoryState(stateMs, safeCounter)
@@ -248,8 +248,11 @@ let ``Restored state is a monotonic lower bound`` (counter: uint16) (rollbackMs:
     use factory = new UuidV7Factory(timeProvider, restoredState)
 
     let uuid = factory.NewGuid()
-    uuid.GetTimestampMs().Value = restoredState.TimestampMs
-    && uuid.GetCounter().Value = safeCounter + 1us
+    let timestamp = uuid.GetTimestampMs().Value
+    let generatedCounter = uuid.GetCounter().Value
+
+    timestamp > restoredState.TimestampMs
+    || (timestamp = restoredState.TimestampMs && generatedCounter > safeCounter)
 
 /// Property: restoring an older UUIDv7 factory state never lowers the current frontier.
 [<Property(MaxTest = 50)>]

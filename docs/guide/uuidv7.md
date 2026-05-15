@@ -115,6 +115,8 @@ var restored = UuidV7FactoryState.ReadFrom(persistedBytes);
 using var factory = new UuidV7Factory(TimeProvider.System, restored);
 ```
 
+Checkpointing is exposed on the concrete `UuidV7Factory` type. The narrower `IUuidV7Factory` interface remains generation-only so alternative implementations are not forced into the same persistence model.
+
 Correctness invariant:
 
 ```text

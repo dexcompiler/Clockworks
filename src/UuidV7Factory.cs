@@ -218,6 +218,7 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
     /// <summary>
     /// Captures the current logical frontier for checkpointing and later restoration.
     /// </summary>
+    /// <returns>The current UUIDv7 factory frontier as a restart checkpoint.</returns>
     public UuidV7FactoryState GetState()
     {
         var (timestampMs, counter) = UnpackState(Volatile.Read(ref _packedState));

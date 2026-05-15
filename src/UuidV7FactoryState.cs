@@ -83,6 +83,7 @@ public readonly record struct UuidV7FactoryState
         if (destination.Length < EncodedLength)
             throw new ArgumentException($"Destination must be at least {EncodedLength} bytes.", nameof(destination));
 
+        // UUIDv7 uses a 48-bit timestamp; write the six bytes directly to avoid an 8-byte temporary.
         destination[0] = (byte)(TimestampMs >> 40);
         destination[1] = (byte)(TimestampMs >> 32);
         destination[2] = (byte)(TimestampMs >> 24);
