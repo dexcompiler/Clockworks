@@ -57,7 +57,9 @@ public static class ServiceCollectionExtensions
         /// <summary>
         /// Adds the lock-free GUID factory with a custom TimeProvider.
         /// Use this for testing or simulation. Registers a singleton factory so per-instance monotonic state is shared
-        /// across callers in the process.
+        /// across callers in the process. The service provider disposes the created factory when the provider is
+        /// disposed; externally supplied <paramref name="timeProvider"/> and <paramref name="rng"/> instances remain
+        /// caller-owned.
         /// </summary>
         /// <param name="timeProvider">Time source used by the UUIDv7 factory.</param>
         /// <param name="rng">
@@ -70,8 +72,13 @@ public static class ServiceCollectionExtensions
             RandomNumberGenerator? rng = null,
             CounterOverflowBehavior overflowBehavior = CounterOverflowBehavior.SpinWait)
         {
+            ArgumentNullException.ThrowIfNull(timeProvider);
+
             services.TryAddSingleton(timeProvider);
-            services.AddSingleton<IUuidV7Factory>(new UuidV7Factory(timeProvider, rng, overflowBehavior));
+            services.AddSingleton<IUuidV7Factory>(sp => new UuidV7Factory(
+                sp.GetRequiredService<TimeProvider>(),
+                rng,
+                overflowBehavior));
             services.AddSingleton(sp => (UuidV7Factory)sp.GetRequiredService<IUuidV7Factory>());
 
             return services;
@@ -79,6 +86,8 @@ public static class ServiceCollectionExtensions
 
         /// <summary>
         /// Adds the lock-free GUID factory with a custom TimeProvider and opt-in statistics.
+        /// The service provider disposes the created factory when the provider is disposed; externally supplied
+        /// <paramref name="timeProvider"/> and <paramref name="rng"/> instances remain caller-owned.
         /// </summary>
         /// <param name="timeProvider">Time source used by the UUIDv7 factory.</param>
         /// <param name="statistics">Statistics instance updated by the registered singleton factory.</param>
@@ -98,7 +107,11 @@ public static class ServiceCollectionExtensions
 
             services.TryAddSingleton(timeProvider);
             services.AddSingleton(statistics);
-            services.AddSingleton<IUuidV7Factory>(new UuidV7Factory(timeProvider, rng, overflowBehavior, statistics));
+            services.AddSingleton<IUuidV7Factory>(sp => new UuidV7Factory(
+                sp.GetRequiredService<TimeProvider>(),
+                rng,
+                overflowBehavior,
+                sp.GetRequiredService<UuidV7FactoryStatistics>()));
             services.AddSingleton(sp => (UuidV7Factory)sp.GetRequiredService<IUuidV7Factory>());
 
             return services;

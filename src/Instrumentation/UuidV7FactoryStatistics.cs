@@ -5,7 +5,9 @@ namespace Clockworks.Instrumentation;
 /// </summary>
 /// <remarks>
 /// Statistics are opt-in. Passing an instance to <see cref="UuidV7Factory"/> enables atomic counter updates on the
-/// UUIDv7 generation path; leaving statistics unset avoids those atomic updates.
+/// UUIDv7 generation path; leaving statistics unset avoids those atomic updates. Counters are diagnostic signals: under
+/// lock-free contention, event counters such as <see cref="CounterOverflowCount"/> and <see cref="SpinWaitCount"/>
+/// describe observed path entries and wait attempts rather than globally serialized allocation decisions.
 /// </remarks>
 public sealed class UuidV7FactoryStatistics
 {
@@ -61,19 +63,25 @@ public sealed class UuidV7FactoryStatistics
     /// <summary>
     /// Captures a point-in-time snapshot of all UUIDv7 factory counters.
     /// </summary>
+    /// <remarks>
+    /// Each field is read atomically, but the snapshot is not a linearizable transaction across all counters.
+    /// </remarks>
     public UuidV7FactoryStatisticsSnapshot Snapshot() => new(
-        GeneratedCount,
-        ClockRollbackCount,
-        CounterOverflowCount,
-        SpinWaitCount,
-        LogicalTimestampAdvanceCount,
-        MaxLogicalDriftMs,
-        CasRetryCount,
-        RandomBufferRefillCount);
+        GeneratedCount: GeneratedCount,
+        ClockRollbackCount: ClockRollbackCount,
+        CounterOverflowCount: CounterOverflowCount,
+        SpinWaitCount: SpinWaitCount,
+        LogicalTimestampAdvanceCount: LogicalTimestampAdvanceCount,
+        MaxLogicalDriftMs: MaxLogicalDriftMs,
+        CasRetryCount: CasRetryCount,
+        RandomBufferRefillCount: RandomBufferRefillCount);
 
     /// <summary>
     /// Resets all counters to zero.
     /// </summary>
+    /// <remarks>
+    /// Each counter is reset atomically, but the reset is not a linearizable transaction across all counters.
+    /// </remarks>
     public void Reset()
     {
         Interlocked.Exchange(ref _generatedCount, 0);

@@ -208,6 +208,22 @@ public sealed class UuidV7FactoryStatisticsTests
         Assert.Equal(1, statistics.GeneratedCount);
     }
 
+    [Fact]
+    public void AddLockFreeGuidFactory_DisposesContainerOwnedFactory()
+    {
+        var services = new ServiceCollection();
+        var time = SimulatedTimeProvider.FromUnixMs(1_700_000_000_000);
+
+        services.AddLockFreeGuidFactory(time);
+
+        var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<UuidV7Factory>();
+
+        provider.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => factory.NewGuid());
+    }
+
     private sealed class BarrierTimeProvider(long unixMs) : TimeProvider
     {
         private DateTimeOffset _utcNow = DateTimeOffset.FromUnixTimeMilliseconds(unixMs);

@@ -53,7 +53,7 @@ Console.WriteLine(snapshot.ClockRollbackCount);
 Console.WriteLine(snapshot.CasRetryCount);
 ```
 
-Statistics are disabled unless you pass an instance to the factory. When enabled, counters use atomic operations so they can be read safely while UUIDs are being generated concurrently.
+Statistics are disabled unless you pass an instance to the factory. When enabled, counters use atomic operations so they can be read safely while UUIDs are being generated concurrently. `Snapshot()` and `Reset()` operate counter-by-counter; they are suitable for diagnostics and phase-isolated tests, not as a linearizable multi-counter transaction.
 
 Useful counters include:
 

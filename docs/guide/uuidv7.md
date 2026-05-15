@@ -106,7 +106,7 @@ Key counters:
 | `CasRetryCount` | Failed compare-exchange attempts in the lock-free allocation loop. |
 | `RandomBufferRefillCount` | Thread-local random buffer refills. |
 
-Most counters are diagnostic event counts, not rates. For example, a single `NewGuids(span)` call may reserve many UUIDs with one successful allocation decision, so `GeneratedCount` increases by `span.Length` while rollback or drift counters increase once for that reservation.
+Most counters are diagnostic event counts, not rates. For example, a single `NewGuids(span)` call may reserve many UUIDs with one successful allocation decision, so `GeneratedCount` increases by `span.Length` while rollback or drift counters increase once for that reservation. Under lock-free contention, overflow and spin-wait counters describe observed path entries and wait attempts rather than a globally serialized event log.
 
 ## Custom RNGs and Deterministic Tests
 
