@@ -7,6 +7,9 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Fixed
+- Canonicalize explicit zero-counter `VectorClock` entries away during parse/read paths so structural equality matches vector-clock semantics for missing entries.
+
 ### Added
 - Add opt-in `UuidV7FactoryStatistics` counters for generated UUIDs, clock rollback, counter overflow, spin-wait, logical drift, CAS retries, and random-buffer refills.
 - Add opt-in UUIDv7 node partitioning that reserves 1 to 16 `rand_b` bits for a node, shard, process, or deployment discriminator.
