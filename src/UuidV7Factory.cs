@@ -1,4 +1,5 @@
 using Clockworks.Abstractions;
+using Clockworks.Instrumentation;
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -51,6 +52,7 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
     private readonly bool _ownsRng;
     private readonly CounterOverflowBehavior _overflowBehavior;
     private readonly CounterOverflowBehavior _effectiveOverflowBehavior;
+    private readonly UuidV7FactoryStatistics? _statistics;
 
     // Packed state: [48 bits timestamp][16 bits counter]
     // Using 64-bit atomic operations for lock-free updates
@@ -86,17 +88,39 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
         TimeProvider timeProvider,
         RandomNumberGenerator? rng = null,
         CounterOverflowBehavior overflowBehavior = CounterOverflowBehavior.SpinWait)
+        : this(timeProvider, rng, overflowBehavior, statistics: null)
+    {
+    }
+
+    /// <summary>
+    /// Creates a new UUIDv7 generator with optional statistics.
+    /// </summary>
+    /// <param name="timeProvider">Time source (use <see cref="TimeProvider.System"/> for production).</param>
+    /// <param name="rng">
+    /// Random number generator to use for the random portion of the UUID. If <see langword="null"/>, a new
+    /// cryptographically-secure RNG is created and owned by this instance. Production deployments should use a
+    /// cryptographically strong RNG with independent state for each factory. Seeded or deterministic RNGs are intended
+    /// only for reproducible tests and simulations.
+    /// </param>
+    /// <param name="overflowBehavior">Behavior to apply when the per-millisecond counter overflows.</param>
+    /// <param name="statistics">Statistics instance to update from this factory, or <see langword="null"/> to disable statistics.</param>
+    public UuidV7Factory(
+        TimeProvider timeProvider,
+        RandomNumberGenerator? rng,
+        CounterOverflowBehavior overflowBehavior,
+        UuidV7FactoryStatistics? statistics)
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _rng = rng ?? RandomNumberGenerator.Create();
         _ownsRng = rng is null;
         _overflowBehavior = overflowBehavior;
+        _statistics = statistics;
 
         _effectiveOverflowBehavior = overflowBehavior == CounterOverflowBehavior.Auto
             ? (_timeProvider is SimulatedTimeProvider ? CounterOverflowBehavior.IncrementTimestamp : CounterOverflowBehavior.SpinWait)
             : overflowBehavior;
 
-        _randomBuffer = new ThreadLocal<RandomBuffer>(() => new RandomBuffer(_rng), trackAllValues: false);
+        _randomBuffer = new ThreadLocal<RandomBuffer>(() => new RandomBuffer(_rng, _statistics), trackAllValues: false);
 
         // Initialize state with current time and random counter
         var initialTimestamp = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
@@ -104,19 +128,28 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
         _packedState = PackState(initialTimestamp, initialCounter);
     }
 
+    /// <summary>
+    /// Statistics instance updated by this factory, or <see langword="null"/> when statistics are disabled.
+    /// </summary>
+    public UuidV7FactoryStatistics? Statistics => _statistics;
+
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public Guid NewGuid()
     {
         var (timestampMs, counter) = AllocateTimestampAndCounter();
-        return CreateGuidFromState(timestampMs, counter);
+        var guid = CreateGuidFromState(timestampMs, counter);
+        _statistics?.RecordGenerated(1);
+        return guid;
     }
 
     /// <inheritdoc/>
     public (Guid Guid, long TimestampMs) NewGuidWithTimestamp()
     {
         var (timestampMs, counter) = AllocateTimestampAndCounter();
-        return (CreateGuidFromState(timestampMs, counter), timestampMs);
+        var guid = CreateGuidFromState(timestampMs, counter);
+        _statistics?.RecordGenerated(1);
+        return (guid, timestampMs);
     }
 
     /// <inheritdoc/>
@@ -139,6 +172,7 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
             var (currentTimestamp, currentCounter) = UnpackState(currentPacked);
 
             var physicalTime = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+            var clockRollback = physicalTime < currentTimestamp;
 
             var baseTimestamp = physicalTime > currentTimestamp ? physicalTime : currentTimestamp;
 
@@ -149,9 +183,11 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
             if (startCounter > MaxCounterValue)
             {
                 // Counter overflow at this millisecond.
+                _statistics?.RecordCounterOverflow();
                 switch (_effectiveOverflowBehavior)
                 {
                     case CounterOverflowBehavior.SpinWait:
+                        _statistics?.RecordSpinWait();
                         SpinWaitForNextMillisecond(baseTimestamp);
                         continue;
 
@@ -178,15 +214,19 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
 
             if (Interlocked.CompareExchange(ref _packedState, newPacked, currentPacked) != currentPacked)
             {
+                _statistics?.RecordCasRetry();
                 spinWait.SpinOnce();
                 continue;
             }
+
+            RecordAllocationDecision(clockRollback, baseTimestamp, physicalTime);
 
             for (var j = 0; j < available; j++)
             {
                 destination[i + j] = CreateGuidFromState(baseTimestamp, (ushort)(startCounter + j));
             }
 
+            _statistics?.RecordGenerated(available);
             i += available;
         }
     }
@@ -213,6 +253,7 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
             var (currentTimestamp, currentCounter) = UnpackState(currentPacked);
 
             var physicalTime = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+            var clockRollback = physicalTime < currentTimestamp;
 
             long newTimestamp;
             ushort newCounter;
@@ -229,9 +270,11 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
                 if (currentCounter >= MaxCounterValue)
                 {
                     // Counter overflow
+                    _statistics?.RecordCounterOverflow();
                     switch (_effectiveOverflowBehavior)
                     {
                         case CounterOverflowBehavior.SpinWait:
+                            _statistics?.RecordSpinWait();
                             SpinWaitForNextMillisecond(physicalTime);
                             continue; // Retry with new time
 
@@ -259,6 +302,7 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
                 // Time went backwards; preserve monotonicity by continuing from the current state.
                 if (currentCounter >= MaxCounterValue)
                 {
+                    _statistics?.RecordCounterOverflow();
                     newTimestamp = currentTimestamp + 1;
                     newCounter = GetRandomCounterStart();
                 }
@@ -273,11 +317,28 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
 
             if (Interlocked.CompareExchange(ref _packedState, newPacked, currentPacked) == currentPacked)
             {
+                RecordAllocationDecision(clockRollback, newTimestamp, physicalTime);
                 return (newTimestamp, newCounter);
             }
 
+            _statistics?.RecordCasRetry();
             spinWait.SpinOnce();
         }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void RecordAllocationDecision(bool clockRollback, long logicalTimestamp, long physicalTime)
+    {
+        var statistics = _statistics;
+        if (statistics is null)
+            return;
+
+        if (clockRollback)
+            statistics.RecordClockRollback();
+
+        var driftMs = logicalTimestamp - physicalTime;
+        if (driftMs > 0)
+            statistics.RecordLogicalTimestampAdvance(driftMs);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -362,14 +423,16 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
     private sealed class RandomBuffer
     {
         private readonly RandomNumberGenerator _rng;
+        private readonly UuidV7FactoryStatistics? _statistics;
         private readonly byte[] _buffer;
         private int _position;
 
         private const int BufferSize = 256; // ~32 GUIDs worth
 
-        public RandomBuffer(RandomNumberGenerator rng)
+        public RandomBuffer(RandomNumberGenerator rng, UuidV7FactoryStatistics? statistics)
         {
             _rng = rng;
+            _statistics = statistics;
             _buffer = new byte[BufferSize];
             _position = BufferSize; // Force initial fill
         }
@@ -391,6 +454,7 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
         private void Refill()
         {
             _rng.GetBytes(_buffer);
+            _statistics?.RecordRandomBufferRefill();
             _position = 0;
         }
     }

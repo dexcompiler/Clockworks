@@ -8,6 +8,7 @@ open Xunit
 open FsCheck
 open FsCheck.Xunit
 open Clockworks
+open Clockworks.Instrumentation
 
 type private DeterministicRandomNumberGenerator(seed: int) =
     inherit RandomNumberGenerator()
@@ -156,6 +157,47 @@ let ``UUIDs are unique`` (count: byte) =
     let uniqueCount = uuids |> Array.distinct |> Array.length
     
     uniqueCount = safeCount
+
+/// Property: UUIDv7 statistics count every successfully generated UUID exactly once.
+[<Property(MaxTest = 50)>]
+let ``Statistics generated count matches successful UUID generation`` (count: uint16) =
+    let safeCount = int (count % 512us) + 1
+    let statistics = UuidV7FactoryStatistics()
+    let timeProvider = new SimulatedTimeProvider()
+    use factory =
+        new UuidV7Factory(
+            timeProvider,
+            null,
+            CounterOverflowBehavior.IncrementTimestamp,
+            statistics)
+
+    statistics.Reset()
+
+    for _ in 1..safeCount do
+        factory.NewGuid() |> ignore
+
+    statistics.Snapshot().GeneratedCount = int64 safeCount
+
+/// Property: UUIDv7 statistics expose the maximum logical drift caused by wall-clock rollback.
+[<Property(MaxTest = 50)>]
+let ``Statistics max drift tracks wall clock rollback`` (rollbackMs: uint16) =
+    let safeRollbackMs = int64 (rollbackMs % 1000us) + 1L
+    let startMs = 1_700_000_000_000L
+    let statistics = UuidV7FactoryStatistics()
+    let timeProvider = SimulatedTimeProvider.FromUnixMs(startMs)
+    use factory = new UuidV7Factory(timeProvider, null, CounterOverflowBehavior.SpinWait, statistics)
+
+    statistics.Reset()
+
+    factory.NewGuid() |> ignore
+    timeProvider.SetUnixMs(startMs - safeRollbackMs)
+    factory.NewGuid() |> ignore
+
+    let snapshot = statistics.Snapshot()
+    snapshot.GeneratedCount = 2L
+    && snapshot.ClockRollbackCount = 1L
+    && snapshot.LogicalTimestampAdvanceCount = 1L
+    && snapshot.MaxLogicalDriftMs = safeRollbackMs
 
 /// Property: UUIDs generated at different times are different
 [<Property(MaxTest = 50)>]
