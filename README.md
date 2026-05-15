@@ -21,6 +21,7 @@ It is built around `TimeProvider` so that *time becomes an injectable dependency
   - `UuidV7Factory` produces RFC 9562 UUIDv7 values as `Guid`
   - Works with real or simulated time
   - Configurable counter overflow behavior
+  - Optional statistics for rollback, overflow, spin-wait, contention, and random-buffer refill diagnostics
   - Per-instance monotonicity under clock rollback; cross-factory uniqueness remains probabilistic unless coordinated externally
 
 - **Hybrid Logical Clock (HLC)**
@@ -35,7 +36,7 @@ It is built around `TimeProvider` so that *time becomes an injectable dependency
   - Canonical binary wire format (`VectorClock.WriteTo`/`ReadFrom`) and string form for HTTP/gRPC headers
 
 - **Lightweight instrumentation**
-  - Counters for timers, advances, and timeouts useful in simulation/test assertions
+  - Counters for timers, advances, timeouts, and UUIDv7 factory behavior useful in simulation/test assertions
 
 ## Installation
 

@@ -68,6 +68,46 @@ For production services, prefer a single `UuidV7Factory` singleton per process o
 
 For high-assurance shared namespaces, use a storage uniqueness constraint as the final guardrail and retry on conflict. If you need node-aware ordering semantics, consider `HlcGuidFactory`; it embeds a node ID and HLC timestamp, but it should be chosen for causal/node-aware ordering rather than treated as a blanket substitute for storage-level uniqueness.
 
+## Statistics
+
+`UuidV7Factory` statistics are opt-in. Leave them disabled for the lowest-overhead path, or pass a `UuidV7FactoryStatistics` instance when you want to observe clock rollback, counter overflow, spin-wait pressure, and lock-free contention:
+
+```csharp
+var stats = new UuidV7FactoryStatistics();
+using var factory = new UuidV7Factory(
+    TimeProvider.System,
+    rng: null,
+    overflowBehavior: CounterOverflowBehavior.SpinWait,
+    statistics: stats);
+
+var id = factory.NewGuid();
+var snapshot = stats.Snapshot();
+
+Console.WriteLine(snapshot.GeneratedCount);
+Console.WriteLine(snapshot.CounterOverflowCount);
+```
+
+The built-in DI helpers can register the same shared statistics object as the singleton factory:
+
+```csharp
+services.AddLockFreeGuidFactory(new UuidV7FactoryStatistics());
+```
+
+Key counters:
+
+| Counter | Meaning |
+|---|---|
+| `GeneratedCount` | Number of UUIDs successfully generated. Batch generation increments by the span length. |
+| `ClockRollbackCount` | Successful allocation decisions made while physical time was behind the factory's logical frontier. |
+| `CounterOverflowCount` | Times the 12-bit per-millisecond counter overflow path was reached. |
+| `SpinWaitCount` | Times overflow handling had to wait for physical time to advance. |
+| `LogicalTimestampAdvanceCount` | Successful allocation decisions that emitted logical time ahead of physical time. |
+| `MaxLogicalDriftMs` | Maximum observed distance between emitted logical time and physical time. |
+| `CasRetryCount` | Failed compare-exchange attempts in the lock-free allocation loop. |
+| `RandomBufferRefillCount` | Thread-local random buffer refills. |
+
+Most counters are diagnostic event counts, not rates. For example, a single `NewGuids(span)` call may reserve many UUIDs with one successful allocation decision, so `GeneratedCount` increases by `span.Length` while rollback or drift counters increase once for that reservation.
+
 ## Custom RNGs and Deterministic Tests
 
 Custom RNG injection exists so tests and simulations can replay exact UUID sequences. Clockworks does not ship a deterministic RNG implementation; provide your own test-only `RandomNumberGenerator` when you need replay.
@@ -162,3 +202,5 @@ dotnet run --project demo/Clockworks.Demo -- uuidv7-sortability
 # Benchmark mode
 dotnet run --project demo/Clockworks.Demo -- uuidv7 --bench
 ```
+
+Benchmark mode includes a side-by-side single-threaded comparison of the default hot path and statistics-enabled hot path.

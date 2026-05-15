@@ -7,10 +7,14 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Added
+- Add opt-in `UuidV7FactoryStatistics` counters for generated UUIDs, clock rollback, counter overflow, spin-wait, logical drift, CAS retries, and random-buffer refills.
+
 ### Changed
 - `HlcGuidFactory` constructor now enforces a 14-bit node ID constraint and throws `ArgumentOutOfRangeException` for values above `HlcGuidFactory.MaxNodeId` (16383). Previously, higher values were silently truncated in generated UUIDv7 values.
 
 ### Documentation
+- Document UUIDv7 factory statistics and counter semantics.
 - Clarify `UuidV7Factory` collision and clock-skew guarantees, including the distinction between per-instance deterministic monotonicity and probabilistic cross-factory uniqueness.
 - Document the custom RNG contract for `UuidV7Factory`, including deterministic replay behavior and production CSPRNG guidance.
 
