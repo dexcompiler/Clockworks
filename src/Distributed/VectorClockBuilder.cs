@@ -127,6 +127,9 @@ internal sealed class VectorClockBuilder
 
     private void MergeEntry(ushort nodeId, ulong counter)
     {
+        if (counter == 0)
+            return;
+
         if (_count == 0)
         {
             EnsureCapacity(1);

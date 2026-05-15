@@ -328,6 +328,28 @@ public sealed class VectorClockTests
     }
 
     [Fact]
+    public void StringSerialization_ZeroCounterEntries_AreCanonicalizedAway()
+    {
+        var parsed = VectorClock.Parse("11:704,16:0");
+        var canonical = VectorClock.Parse("11:704");
+
+        Assert.Equal(canonical, parsed);
+        Assert.Equal(VectorClockOrder.Equal, parsed.Compare(canonical));
+        Assert.Equal(0UL, parsed.Get(16));
+        Assert.Equal("11:704", parsed.ToString());
+    }
+
+    [Fact]
+    public void StringSerialization_ZeroCounterOnly_IsEmpty()
+    {
+        var parsed = VectorClock.Parse("16:0");
+
+        Assert.Equal(new VectorClock(), parsed);
+        Assert.True(parsed.IsEmpty);
+        Assert.Equal(string.Empty, parsed.ToString());
+    }
+
+    [Fact]
     public void StringSerialization_UsesInvariantCulture()
     {
         var originalCulture = CultureInfo.CurrentCulture;
@@ -393,6 +415,33 @@ public sealed class VectorClockTests
         Assert.Equal(7UL, parsed.Get(1));
         Assert.Equal(5UL, parsed.Get(2));
         Assert.Equal("1:7,2:5", parsed.ToString());
+    }
+
+    [Fact]
+    public void BinarySerialization_ZeroCounterEntries_AreCanonicalizedAway()
+    {
+        var buffer = BuildBinary(
+            (nodeId: 11, counter: 704UL),
+            (nodeId: 16, counter: 0UL));
+
+        var parsed = VectorClock.ReadFrom(buffer);
+        var canonical = VectorClock.Parse("11:704");
+
+        Assert.Equal(canonical, parsed);
+        Assert.Equal(14, parsed.GetBinarySize());
+        Assert.Equal("11:704", parsed.ToString());
+    }
+
+    [Fact]
+    public void BinarySerialization_ZeroCounterOnly_IsEmpty()
+    {
+        var buffer = BuildBinary((nodeId: 16, counter: 0UL));
+
+        var parsed = VectorClock.ReadFrom(buffer);
+
+        Assert.Equal(new VectorClock(), parsed);
+        Assert.True(parsed.IsEmpty);
+        Assert.Equal(4, parsed.GetBinarySize());
     }
 
     [Fact]

@@ -108,5 +108,4 @@ Binary format:
 
 `[count:u32 big-endian][(nodeId:u16 big-endian, counter:u64 big-endian)]*`
 
-`ReadFrom(...)` also canonicalizes unsorted or duplicate node IDs by taking the maximum counter per node.
-
+`ReadFrom(...)` also canonicalizes unsorted or duplicate node IDs by taking the maximum counter per node. Explicit zero-counter entries are canonicalized away, because a missing vector-clock entry is semantically the same as counter `0`.
