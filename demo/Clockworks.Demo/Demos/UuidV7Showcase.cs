@@ -238,6 +238,26 @@ internal static class UuidV7Showcase
         }
 
         Console.WriteLine();
+        Console.WriteLine("Lock-Free Factory + node partition (single-threaded):");
+        {
+            var partition = new UuidV7NodePartition(nodeId: 42, nodeIdBitWidth: 10);
+            using var factory = new UuidV7Factory(TimeProvider.System, partition);
+
+            var sw = Stopwatch.StartNew();
+            for (int i = 0; i < BenchmarkIterations; i++)
+            {
+                _ = factory.NewGuid();
+            }
+            sw.Stop();
+
+            var seconds = sw.Elapsed.TotalSeconds;
+            var opsPerSec = BenchmarkIterations / seconds;
+            var nsPerOp = sw.Elapsed.TotalNanoseconds / BenchmarkIterations;
+            var overhead = (nsPerOp / disabledNsPerOp - 1.0) * 100.0;
+            Console.WriteLine($"  {opsPerSec:N0} ops/sec ({nsPerOp:N1} ns/op, {overhead:N1}% vs disabled)");
+        }
+
+        Console.WriteLine();
         Console.WriteLine($"Lock-Free Factory ({ThreadCount} threads contended):");
         using (var factory = new UuidV7Factory(TimeProvider.System))
         {
@@ -260,6 +280,55 @@ internal static class UuidV7Showcase
             var seconds = sw.Elapsed.TotalSeconds;
             var opsPerSec = BenchmarkIterations / seconds;
             Console.WriteLine($"  {opsPerSec:N0} ops/sec total ({opsPerSec / ThreadCount:N0} ops/sec/thread)");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Lock-Free Factory batch NewGuids:");
+        double disabledBatchNsPerOp;
+        {
+            const int BatchSize = 1024;
+            using var factory = new UuidV7Factory(TimeProvider.System);
+            var batch = new Guid[BatchSize];
+            var generated = 0;
+
+            var sw = Stopwatch.StartNew();
+            while (generated < BenchmarkIterations)
+            {
+                var take = Math.Min(BatchSize, BenchmarkIterations - generated);
+                factory.NewGuids(batch.AsSpan(0, take));
+                generated += take;
+            }
+            sw.Stop();
+
+            var seconds = sw.Elapsed.TotalSeconds;
+            var opsPerSec = BenchmarkIterations / seconds;
+            disabledBatchNsPerOp = sw.Elapsed.TotalNanoseconds / BenchmarkIterations;
+            Console.WriteLine($"  {opsPerSec:N0} ops/sec ({disabledBatchNsPerOp:N1} ns/op)");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Lock-Free Factory + node partition batch NewGuids:");
+        {
+            const int BatchSize = 1024;
+            var partition = new UuidV7NodePartition(nodeId: 42, nodeIdBitWidth: 10);
+            using var factory = new UuidV7Factory(TimeProvider.System, partition);
+            var batch = new Guid[BatchSize];
+            var generated = 0;
+
+            var sw = Stopwatch.StartNew();
+            while (generated < BenchmarkIterations)
+            {
+                var take = Math.Min(BatchSize, BenchmarkIterations - generated);
+                factory.NewGuids(batch.AsSpan(0, take));
+                generated += take;
+            }
+            sw.Stop();
+
+            var seconds = sw.Elapsed.TotalSeconds;
+            var opsPerSec = BenchmarkIterations / seconds;
+            var nsPerOp = sw.Elapsed.TotalNanoseconds / BenchmarkIterations;
+            var overhead = (nsPerOp / disabledBatchNsPerOp - 1.0) * 100.0;
+            Console.WriteLine($"  {opsPerSec:N0} ops/sec ({nsPerOp:N1} ns/op, {overhead:N1}% vs batch disabled)");
         }
 
         Console.WriteLine();

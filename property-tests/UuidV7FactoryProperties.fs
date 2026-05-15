@@ -199,6 +199,44 @@ let ``Statistics max drift tracks wall clock rollback`` (rollbackMs: uint16) =
     && snapshot.LogicalTimestampAdvanceCount = 1L
     && snapshot.MaxLogicalDriftMs = safeRollbackMs
 
+/// Property: node-partitioned UUIDv7 embeds and round-trips the configured node ID.
+[<Property(MaxTest = 50)>]
+let ``Node partition round trips configured node ID`` (rawWidth: byte) (rawNodeId: uint16) =
+    let width = byte ((int rawWidth % int UuidV7NodePartition.MaxNodeIdBitWidth) + 1)
+    let maxNodeId = UuidV7NodePartition.GetMaxNodeId(width)
+    let nodeId = uint16 (int rawNodeId % (int maxNodeId + 1))
+    let partition = UuidV7NodePartition(nodeId, width)
+    let timeProvider = new SimulatedTimeProvider()
+    use factory = new UuidV7Factory(timeProvider, partition)
+
+    let uuid = factory.NewGuid()
+    let extracted = uuid.GetNodePartitionId(width)
+
+    extracted.HasValue && extracted.Value = nodeId
+
+/// Property: different node partitions separate otherwise identical deterministic UUID streams.
+[<Property(MaxTest = 50)>]
+let ``Node partitions separate identical deterministic UUID streams`` (rawWidth: byte) (count: byte) =
+    let width = byte ((int rawWidth % int UuidV7NodePartition.MaxNodeIdBitWidth) + 1)
+    let maxNodeId = UuidV7NodePartition.GetMaxNodeId(width)
+    let safeCount = int (count % 32uy) + 1
+    let startMs = 1_700_000_000_000L
+
+    let leftPartition = UuidV7NodePartition(0us, width)
+    let rightPartition = UuidV7NodePartition(maxNodeId, width)
+    use leftRng = new DeterministicRandomNumberGenerator(42)
+    use rightRng = new DeterministicRandomNumberGenerator(42)
+    use left = new UuidV7Factory(SimulatedTimeProvider.FromUnixMs(startMs), leftPartition, leftRng)
+    use right = new UuidV7Factory(SimulatedTimeProvider.FromUnixMs(startMs), rightPartition, rightRng)
+
+    [| for _ in 1..safeCount -> left.NewGuid(), right.NewGuid() |]
+    |> Array.forall (fun (leftId, rightId) ->
+        leftId <> rightId
+        && leftId.GetTimestampMs() = rightId.GetTimestampMs()
+        && leftId.GetCounter() = rightId.GetCounter()
+        && leftId.GetNodePartitionId(width).Value = 0us
+        && rightId.GetNodePartitionId(width).Value = maxNodeId)
+
 /// Property: UUIDs generated at different times are different
 [<Property(MaxTest = 50)>]
 let ``UUIDs change with time`` (advanceMs: uint16) =

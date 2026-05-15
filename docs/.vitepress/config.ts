@@ -63,6 +63,7 @@ export default defineConfig({
           items: [
             { text: 'Why Clockworks?', link: '/concepts/why-clockworks' },
             { text: 'HLC vs Vector Clocks', link: '/concepts/hlc-vs-vector' },
+            { text: 'UUIDv7 Node Partitioning', link: '/concepts/uuidv7-node-partitioning' },
             { text: 'Determinism Model', link: '/concepts/determinism' },
             { text: 'Security Considerations', link: '/concepts/security' },
           ],

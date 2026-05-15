@@ -118,6 +118,63 @@ public static class ServiceCollectionExtensions
         }
 
         /// <summary>
+        /// Adds the lock-free GUID factory with system time and an opt-in UUIDv7 node partition.
+        /// Use this for distributed fleets that can assign unique node, shard, process, or deployment IDs.
+        /// </summary>
+        /// <param name="nodePartition">Node partition to embed into the most-significant bits of UUIDv7 <c>rand_b</c>.</param>
+        /// <param name="overflowBehavior">Behavior to apply when the per-millisecond counter overflows.</param>
+        public IServiceCollection AddNodePartitionedGuidFactory(
+            UuidV7NodePartition nodePartition,
+            CounterOverflowBehavior overflowBehavior = CounterOverflowBehavior.SpinWait)
+        {
+            services.TryAddSingleton(TimeProvider.System);
+            services.AddSingleton<IUuidV7Factory>(sp => new UuidV7Factory(
+                sp.GetRequiredService<TimeProvider>(),
+                nodePartition,
+                overflowBehavior: overflowBehavior));
+            services.AddSingleton(sp => (UuidV7Factory)sp.GetRequiredService<IUuidV7Factory>());
+
+            return services;
+        }
+
+        /// <summary>
+        /// Adds the lock-free GUID factory with a custom TimeProvider and an opt-in UUIDv7 node partition.
+        /// The service provider disposes the created factory when the provider is disposed; externally supplied
+        /// <paramref name="timeProvider"/> and <paramref name="rng"/> instances remain caller-owned.
+        /// </summary>
+        /// <param name="timeProvider">Time source used by the UUIDv7 factory.</param>
+        /// <param name="nodePartition">Node partition to embed into the most-significant bits of UUIDv7 <c>rand_b</c>.</param>
+        /// <param name="rng">
+        /// Random number generator used for the UUID random tail. Leave null for a per-factory CSPRNG. Seeded or
+        /// deterministic RNGs are intended only for reproducible tests and simulations.
+        /// </param>
+        /// <param name="overflowBehavior">Behavior to apply when the per-millisecond counter overflows.</param>
+        /// <param name="statistics">Optional statistics instance updated by the registered singleton factory.</param>
+        public IServiceCollection AddNodePartitionedGuidFactory(
+            TimeProvider timeProvider,
+            UuidV7NodePartition nodePartition,
+            RandomNumberGenerator? rng = null,
+            CounterOverflowBehavior overflowBehavior = CounterOverflowBehavior.SpinWait,
+            UuidV7FactoryStatistics? statistics = null)
+        {
+            ArgumentNullException.ThrowIfNull(timeProvider);
+
+            services.TryAddSingleton(timeProvider);
+            if (statistics is not null)
+                services.AddSingleton(statistics);
+
+            services.AddSingleton<IUuidV7Factory>(sp => new UuidV7Factory(
+                sp.GetRequiredService<TimeProvider>(),
+                nodePartition,
+                rng,
+                overflowBehavior,
+                statistics is null ? null : sp.GetRequiredService<UuidV7FactoryStatistics>()));
+            services.AddSingleton(sp => (UuidV7Factory)sp.GetRequiredService<IUuidV7Factory>());
+
+            return services;
+        }
+
+        /// <summary>
         /// Adds the HLC GUID factory with system time.
         /// Use this for distributed systems requiring causal ordering.
         /// </summary>
@@ -232,6 +289,28 @@ public static class GuidExtensions
 
             // Node ID is in bytes 8-9 after masking off the two RFC variant bits.
             return (ushort)(((bytes[8] & 0x3F) << 8) | bytes[9]);
+        }
+
+        /// <summary>
+        /// For node-partitioned UUIDv7s, extracts the configured node partition from the most-significant
+        /// <c>rand_b</c> bits.
+        /// </summary>
+        /// <param name="nodeIdBitWidth">Number of <c>rand_b</c> bits reserved for the node partition.</param>
+        /// <returns>
+        /// The node partition ID, or <see langword="null"/> if this GUID is not UUIDv7 or the bit width is invalid.
+        /// </returns>
+        public ushort? GetNodePartitionId(byte nodeIdBitWidth)
+        {
+            if (nodeIdBitWidth is < UuidV7NodePartition.MinNodeIdBitWidth or > UuidV7NodePartition.MaxNodeIdBitWidth)
+                return null;
+
+            Span<byte> bytes = stackalloc byte[16];
+            guid.TryWriteBytes(bytes, bigEndian: true, out _);
+
+            if ((bytes[6] & 0xF0) != 0x70 || (bytes[8] & 0xC0) != 0x80)
+                return null;
+
+            return UuidV7NodePartition.ReadNodeId(bytes, nodeIdBitWidth);
         }
 
         /// <summary>

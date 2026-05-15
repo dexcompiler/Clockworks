@@ -21,6 +21,7 @@ It is built around `TimeProvider` so that *time becomes an injectable dependency
   - `UuidV7Factory` produces RFC 9562 UUIDv7 values as `Guid`
   - Works with real or simulated time
   - Configurable counter overflow behavior
+  - Optional `rand_b` node partitioning for distributed fleets with assigned node/shard IDs
   - Optional statistics for rollback, overflow, spin-wait, contention, and random-buffer refill diagnostics
   - Per-instance monotonicity under clock rollback; cross-factory uniqueness remains probabilistic unless coordinated externally
 

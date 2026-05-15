@@ -12,11 +12,13 @@ This page mirrors the repository root `CHANGELOG.md`.
 
 ### Added
 - Add opt-in `UuidV7FactoryStatistics` counters for generated UUIDs, clock rollback, counter overflow, spin-wait, logical drift, CAS retries, and random-buffer refills.
+- Add opt-in UUIDv7 node partitioning that reserves 1 to 16 `rand_b` bits for a node, shard, process, or deployment discriminator.
 
 ### Changed
 - `HlcGuidFactory` constructor now enforces a 14-bit node ID constraint and throws `ArgumentOutOfRangeException` for values above `HlcGuidFactory.MaxNodeId` (16383). Previously, higher values were silently truncated in generated UUIDv7 values.
 
 ### Documentation
+- Document UUIDv7 node partitioning trade-offs versus default UUIDv7, `HlcGuidFactory`, Snowflake-style IDs, and database allocators.
 - Document UUIDv7 factory statistics and counter semantics.
 - Clarify `UuidV7Factory` collision and clock-skew guarantees, including the distinction between per-instance deterministic monotonicity and probabilistic cross-factory uniqueness.
 - Document the custom RNG contract for `UuidV7Factory`, including deterministic replay behavior and production CSPRNG guidance.

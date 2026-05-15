@@ -68,6 +68,29 @@ For production services, prefer a single `UuidV7Factory` singleton per process o
 
 For high-assurance shared namespaces, use a storage uniqueness constraint as the final guardrail and retry on conflict. If you need node-aware ordering semantics, consider `HlcGuidFactory`; it embeds a node ID and HLC timestamp, but it should be chosen for causal/node-aware ordering rather than treated as a blanket substitute for storage-level uniqueness.
 
+## Node Partitioning
+
+For fleets that can assign stable node, shard, process, or deployment IDs, `UuidV7Factory` can reserve 1 to 16 of the most-significant UUIDv7 `rand_b` bits as a deterministic partition:
+
+```csharp
+var partition = new UuidV7NodePartition(nodeId: 42, nodeIdBitWidth: 10);
+using var factory = new UuidV7Factory(TimeProvider.System, partition);
+
+var id = factory.NewGuid();
+Console.WriteLine(id.GetNodePartitionId(10)); // 42
+```
+
+This is opt-in. The default factory keeps all 62 effective `rand_b` bits random. Partitioning trades entropy for deterministic namespace separation: a 10-bit partition supports 1,024 IDs and leaves 52 random bits; a 16-bit partition supports 65,536 IDs and leaves 46 random bits.
+
+The built-in DI helpers can register a node-partitioned singleton:
+
+```csharp
+services.AddNodePartitionedGuidFactory(
+    new UuidV7NodePartition(nodeId: 42, nodeIdBitWidth: 10));
+```
+
+See [UUIDv7 Node Partitioning](/concepts/uuidv7-node-partitioning) for the design trade-offs.
+
 ## Statistics
 
 `UuidV7Factory` statistics are opt-in. Leave them disabled for the lowest-overhead path, or pass a `UuidV7FactoryStatistics` instance when you want to observe clock rollback, counter overflow, spin-wait pressure, and lock-free contention:
@@ -204,3 +227,4 @@ dotnet run --project demo/Clockworks.Demo -- uuidv7 --bench
 ```
 
 Benchmark mode includes a side-by-side single-threaded comparison of the default hot path and statistics-enabled hot path.
+It also compares node-partitioned generation against default `NewGuid()` and `NewGuids(Span<Guid>)`.
