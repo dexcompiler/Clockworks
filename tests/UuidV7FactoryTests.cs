@@ -5,6 +5,58 @@ namespace Clockworks.Tests;
 public sealed class UuidV7FactoryTests
 {
     [Fact]
+    public void NewGuid_ReplaysSameSequence_WhenDeterministicFactoriesUseSameSeedAndTime()
+    {
+        const long startMs = 1_700_000_000_000;
+        const int count = 32;
+
+        using var leftRng = new DeterministicRandomNumberGenerator(seed: 42);
+        using var rightRng = new DeterministicRandomNumberGenerator(seed: 42);
+        using var left = new UuidV7Factory(SimulatedTimeProvider.FromUnixMs(startMs), leftRng);
+        using var right = new UuidV7Factory(SimulatedTimeProvider.FromUnixMs(startMs), rightRng);
+
+        var leftIds = new Guid[count];
+        var rightIds = new Guid[count];
+
+        for (var i = 0; i < count; i++)
+        {
+            leftIds[i] = left.NewGuid();
+            rightIds[i] = right.NewGuid();
+        }
+
+        Assert.Equal(leftIds, rightIds);
+    }
+
+    [Fact]
+    public void NewGuid_UsesIndependentReplayableStreams_WhenDeterministicFactoriesUseDerivedSeeds()
+    {
+        const long startMs = 1_700_000_000_000;
+        const int count = 32;
+
+        using var baseRng = new DeterministicRandomNumberGenerator(seed: 42);
+        using var replayBaseRng = new DeterministicRandomNumberGenerator(seed: 42);
+
+        var leftIds = GenerateWithRng(baseRng.Derive(0));
+        var rightIds = GenerateWithRng(baseRng.Derive(1));
+        var leftReplayIds = GenerateWithRng(replayBaseRng.Derive(0));
+
+        Assert.NotEqual(leftIds, rightIds);
+        Assert.Equal(leftIds, leftReplayIds);
+
+        static Guid[] GenerateWithRng(DeterministicRandomNumberGenerator rng)
+        {
+            using (rng)
+            using (var factory = new UuidV7Factory(SimulatedTimeProvider.FromUnixMs(startMs), rng))
+            {
+                var ids = new Guid[count];
+                for (var i = 0; i < ids.Length; i++)
+                    ids[i] = factory.NewGuid();
+                return ids;
+            }
+        }
+    }
+
+    [Fact]
     public void NewGuids_IsMonotonic_AndUnique_WhenTimeDoesNotAdvance()
     {
         var time = SimulatedTimeProvider.FromUnixMs(1_700_000_000_000);

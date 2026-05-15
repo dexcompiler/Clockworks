@@ -12,6 +12,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Documentation
 - Clarify `UuidV7Factory` collision and clock-skew guarantees, including the distinction between per-instance deterministic monotonicity and probabilistic cross-factory uniqueness.
+- Document the custom RNG contract for `UuidV7Factory`, including deterministic replay behavior and production CSPRNG guidance.
 
 ## [1.3.1] - 2026-04-02
 

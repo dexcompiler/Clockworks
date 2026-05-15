@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 
 namespace Clockworks.Tests;
 
-// <summary>
+/// <summary>
 /// Deterministic pseudo-random number generator for test replay and simulation.
 /// 
 /// <para>
@@ -16,10 +16,9 @@ namespace Clockworks.Tests;
 /// </para>
 /// 
 /// <para>
-/// <b>Mathematical Basis:</b>
-/// Uses .NET's implementation of xoshiro256** algorithm internally.
-/// Period: 2^256 - 1
-/// Good statistical properties for testing, but predictable.
+/// <b>Implementation Notes:</b>
+/// Uses <see cref="Random"/> internally. The exact PRNG algorithm is a runtime detail and may change between .NET
+/// versions. Determinism is intended for same-runtime replay in tests/simulations, not cross-version reproducibility.
 /// </para>
 /// </summary>
 public sealed class DeterministicRandomNumberGenerator : RandomNumberGenerator
@@ -73,12 +72,27 @@ public sealed class DeterministicRandomNumberGenerator : RandomNumberGenerator
         }
     }
 
-    // <summary>
+    /// <summary>
     /// Create a new generator with a derived seed for parallel test isolation.
     /// </summary>
     public DeterministicRandomNumberGenerator Derive(int index)
     {
-        return new DeterministicRandomNumberGenerator(HashCode.Combine(_seed, index));
+        return new DeterministicRandomNumberGenerator(StableMix(_seed, index));
+    }
+
+    private static int StableMix(int seed, int index)
+    {
+        unchecked
+        {
+            var value = (uint)seed + 0x9E37_79B9u;
+            value ^= (uint)index + 0x85EB_CA6Bu + (value << 6) + (value >> 2);
+            value ^= value >> 16;
+            value *= 0x7FEB_352Du;
+            value ^= value >> 15;
+            value *= 0x846C_A68Bu;
+            value ^= value >> 16;
+            return (int)value;
+        }
     }
 }
 
@@ -111,11 +125,12 @@ public static class DeterministicGuidSetup
     {
         var factories = new HlcGuidFactory[nodeCount];
         var times = new SimulatedTimeProvider[nodeCount];
+        using var baseRng = new DeterministicRandomNumberGenerator(baseSeed);
 
         for (int i = 0; i < nodeCount; i++)
         {
             times[i] = SimulatedTimeProvider.FromUnixMs(startTimeUnixMs);
-            var rng = new DeterministicRandomNumberGenerator(HashCode.Combine(baseSeed, i));
+            var rng = baseRng.Derive(i);
             factories[i] = new HlcGuidFactory(times[i], (ushort)i, rng: rng);
         }
 
