@@ -62,7 +62,8 @@ This guarantees strict per-instance monotonicity without locks. The guarantee is
 | Multiple threads sharing one factory | Same per-instance guarantee; CAS retries may occur under contention, but successful allocations do not reuse a pair. |
 | Multiple factories in one process | No shared logical frontier. Full UUID collisions are still extremely unlikely with independent CSPRNG state, but uniqueness is probabilistic. |
 | Multiple processes or machines | No built-in global coordination or node discriminator in `UuidV7Factory`. Clock skew can increase timestamp overlap, while uniqueness depends on randomized counter starts and the 62-bit random tail. |
-| Process restart | The new factory starts from current wall time and a random counter start. It does not inherit the previous logical frontier. |
+| Process restart without restored state | The new factory starts from current wall time and a random counter start. It does not inherit the previous logical frontier. |
+| Process restart with restored state | The new factory starts at or above the restored logical frontier. This prevents rollback relative to the persisted cursor, but it does not coordinate multiple live writers. |
 
 For production services, prefer a single `UuidV7Factory` singleton per process or service instance. The built-in DI helpers register it this way.
 
@@ -90,6 +91,48 @@ services.AddNodePartitionedGuidFactory(
 ```
 
 See [UUIDv7 Node Partitioning](/concepts/uuidv7-node-partitioning) for the design trade-offs.
+
+## Restart State
+
+`UuidV7FactoryState` captures the factory's current logical frontier as a compact `(timestampMs, counter)` cursor. Persisting this state lets a later process restore the frontier after a restart:
+
+```csharp
+using var factory = new UuidV7Factory(TimeProvider.System);
+
+var id = factory.NewGuid();
+var state = factory.GetState();
+
+Span<byte> buffer = stackalloc byte[UuidV7FactoryState.EncodedLength];
+state.WriteTo(buffer);
+
+// Persist the eight bytes durably with your application's checkpoint.
+```
+
+To restore:
+
+```csharp
+var restored = UuidV7FactoryState.ReadFrom(persistedBytes);
+using var factory = new UuidV7Factory(TimeProvider.System, restored);
+```
+
+Checkpointing is exposed on the concrete `UuidV7Factory` type. The narrower `IUuidV7Factory` interface remains generation-only so alternative implementations are not forced into the same persistence model.
+
+Correctness invariant:
+
+```text
+next_generated_frontier > restored_frontier
+```
+
+More precisely, if the restored timestamp is equal to or ahead of physical time, the factory initializes from the restored cursor and the next UUID advances it. If physical time is already ahead of the restored timestamp, the factory uses physical time and a fresh random counter start. Either way, future allocations do not move below the restored frontier.
+
+Important operational limits:
+
+- Persist state after the UUIDs it covers are durably committed. A crash after issuing a UUID but before persisting the new state can still lose the last frontier.
+- Restored state coordinates one replacement factory. It does not coordinate multiple live factories restoring the same cursor.
+- Use node partitioning, `HlcGuidFactory`, external allocation, or storage uniqueness constraints when multiple writers share a namespace.
+- If you restore a same-millisecond max-counter state with `SpinWait`, the next allocation may wait for physical time to advance. For deterministic simulations, prefer `CounterOverflowBehavior.Auto` or `IncrementTimestamp`.
+
+See [UUIDv7 Restart State](/concepts/uuidv7-restart-state) for the design notes and failure modes.
 
 ## Statistics
 
