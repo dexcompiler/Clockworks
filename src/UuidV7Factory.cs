@@ -65,9 +65,6 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
 
     private const int MaxCounterValue = 0xFFF;       // 12 bits = 4095
     private const int CounterRandomStart = 0x7FF;   // Start in lower half (11 bits max)
-    private const long TimestampMask = unchecked((long)0xFFFF_FFFF_FFFF_0000L);
-    private const long CounterMask = 0x0000_0000_0000_FFFFL;
-
     // UUID constants
     private const byte Version7 = 0x70;        // 0111 xxxx
     private const byte VersionMask = 0x0F;
@@ -89,7 +86,7 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
         TimeProvider timeProvider,
         RandomNumberGenerator? rng = null,
         CounterOverflowBehavior overflowBehavior = CounterOverflowBehavior.SpinWait)
-        : this(timeProvider, rng, overflowBehavior, statistics: null, nodePartition: default)
+        : this(timeProvider, rng, overflowBehavior, statistics: null, nodePartition: default, restoredState: null)
     {
     }
 
@@ -110,7 +107,28 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
         RandomNumberGenerator? rng,
         CounterOverflowBehavior overflowBehavior,
         UuidV7FactoryStatistics? statistics)
-        : this(timeProvider, rng, overflowBehavior, statistics, nodePartition: default)
+        : this(timeProvider, rng, overflowBehavior, statistics, nodePartition: default, restoredState: null)
+    {
+    }
+
+    /// <summary>
+    /// Creates a new UUIDv7 generator with an opt-in restored logical frontier.
+    /// </summary>
+    /// <param name="timeProvider">Time source (use <see cref="TimeProvider.System"/> for production).</param>
+    /// <param name="restoredState">Persisted factory frontier to restore.</param>
+    /// <param name="rng">
+    /// Random number generator to use for the random portion of the UUID. If <see langword="null"/>, a new
+    /// cryptographically-secure RNG is created and owned by this instance.
+    /// </param>
+    /// <param name="overflowBehavior">Behavior to apply when the per-millisecond counter overflows.</param>
+    /// <param name="statistics">Statistics instance to update from this factory, or <see langword="null"/> to disable statistics.</param>
+    public UuidV7Factory(
+        TimeProvider timeProvider,
+        UuidV7FactoryState restoredState,
+        RandomNumberGenerator? rng = null,
+        CounterOverflowBehavior overflowBehavior = CounterOverflowBehavior.SpinWait,
+        UuidV7FactoryStatistics? statistics = null)
+        : this(timeProvider, rng, overflowBehavior, statistics, nodePartition: default, restoredState)
     {
     }
 
@@ -132,7 +150,30 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
         RandomNumberGenerator? rng = null,
         CounterOverflowBehavior overflowBehavior = CounterOverflowBehavior.SpinWait,
         UuidV7FactoryStatistics? statistics = null)
-        : this(timeProvider, rng, overflowBehavior, statistics, nodePartition)
+        : this(timeProvider, rng, overflowBehavior, statistics, nodePartition, restoredState: null)
+    {
+    }
+
+    /// <summary>
+    /// Creates a new UUIDv7 generator with an opt-in node partition and restored logical frontier.
+    /// </summary>
+    /// <param name="timeProvider">Time source (use <see cref="TimeProvider.System"/> for production).</param>
+    /// <param name="nodePartition">Node, shard, process, or deployment discriminator to embed in generated UUIDs.</param>
+    /// <param name="restoredState">Persisted factory frontier to restore.</param>
+    /// <param name="rng">
+    /// Random number generator to use for the random portion of the UUID. If <see langword="null"/>, a new
+    /// cryptographically-secure RNG is created and owned by this instance.
+    /// </param>
+    /// <param name="overflowBehavior">Behavior to apply when the per-millisecond counter overflows.</param>
+    /// <param name="statistics">Statistics instance to update from this factory, or <see langword="null"/> to disable statistics.</param>
+    public UuidV7Factory(
+        TimeProvider timeProvider,
+        UuidV7NodePartition nodePartition,
+        UuidV7FactoryState restoredState,
+        RandomNumberGenerator? rng = null,
+        CounterOverflowBehavior overflowBehavior = CounterOverflowBehavior.SpinWait,
+        UuidV7FactoryStatistics? statistics = null)
+        : this(timeProvider, rng, overflowBehavior, statistics, nodePartition, restoredState)
     {
     }
 
@@ -141,7 +182,8 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
         RandomNumberGenerator? rng,
         CounterOverflowBehavior overflowBehavior,
         UuidV7FactoryStatistics? statistics,
-        UuidV7NodePartition nodePartition)
+        UuidV7NodePartition nodePartition,
+        UuidV7FactoryState? restoredState)
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _rng = rng ?? RandomNumberGenerator.Create();
@@ -156,10 +198,11 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
 
         _randomBuffer = new ThreadLocal<RandomBuffer>(() => new RandomBuffer(_rng, _statistics), trackAllValues: false);
 
-        // Initialize state with current time and random counter
+        // Initialize state with current time and random counter, unless an equal-or-future restored frontier exists.
         var initialTimestamp = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-        var initialCounter = GetRandomCounterStart();
-        _packedState = PackState(initialTimestamp, initialCounter);
+        _packedState = restoredState is { } state && state.TimestampMs >= initialTimestamp
+            ? PackState(state.TimestampMs, state.Counter)
+            : PackState(initialTimestamp, GetRandomCounterStart());
     }
 
     /// <summary>
@@ -171,6 +214,36 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
     /// Node partition embedded into generated UUIDs, or <see langword="null"/> when node partitioning is disabled.
     /// </summary>
     public UuidV7NodePartition? NodePartition => _nodePartition.IsConfigured ? _nodePartition : null;
+
+    /// <summary>
+    /// Captures the current logical frontier for checkpointing and later restoration.
+    /// </summary>
+    public UuidV7FactoryState GetState()
+    {
+        var (timestampMs, counter) = UnpackState(Volatile.Read(ref _packedState));
+        return new UuidV7FactoryState(timestampMs, counter);
+    }
+
+    /// <summary>
+    /// Restores a persisted logical frontier, only advancing the current factory state.
+    /// </summary>
+    /// <remarks>
+    /// If the current factory has already advanced beyond <paramref name="state"/>, this method does nothing.
+    /// </remarks>
+    public void RestoreState(UuidV7FactoryState state)
+    {
+        var restoredPacked = PackState(state.TimestampMs, state.Counter);
+        var currentPacked = Volatile.Read(ref _packedState);
+
+        while (IsPackedAfter(restoredPacked, currentPacked))
+        {
+            var previous = Interlocked.CompareExchange(ref _packedState, restoredPacked, currentPacked);
+            if (previous == currentPacked)
+                return;
+
+            currentPacked = previous;
+        }
+    }
 
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -414,13 +487,20 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static long PackState(long timestamp, ushort counter)
     {
-        return (timestamp << 16) | counter;
+        return unchecked((long)(((ulong)timestamp << 16) | counter));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static (long Timestamp, ushort Counter) UnpackState(long packed)
     {
-        return (packed >> 16, (ushort)(packed & 0xFFFF));
+        var value = unchecked((ulong)packed);
+        return ((long)(value >> 16), (ushort)value);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool IsPackedAfter(long left, long right)
+    {
+        return unchecked((ulong)left) > unchecked((ulong)right);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
