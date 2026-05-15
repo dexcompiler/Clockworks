@@ -416,8 +416,25 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
                 if (currentCounter >= MaxCounterValue)
                 {
                     _statistics?.RecordCounterOverflow();
-                    newTimestamp = currentTimestamp + 1;
-                    newCounter = GetRandomCounterStart();
+                    switch (_effectiveOverflowBehavior)
+                    {
+                        case CounterOverflowBehavior.SpinWait:
+                            _statistics?.RecordSpinWait();
+                            SpinWaitForNextMillisecond(currentTimestamp);
+                            continue;
+
+                        case CounterOverflowBehavior.IncrementTimestamp:
+                            newTimestamp = currentTimestamp + 1;
+                            newCounter = GetRandomCounterStart();
+                            break;
+
+                        case CounterOverflowBehavior.ThrowException:
+                            throw new InvalidOperationException(
+                                $"Counter overflow: generated {MaxCounterValue + 1} UUIDs within millisecond {currentTimestamp}");
+
+                        default:
+                            throw new UnreachableException();
+                    }
                 }
                 else
                 {
@@ -584,12 +601,15 @@ public sealed class UuidV7Factory : IUuidV7Factory, IDisposable
 }
 
 /// <summary>
-/// Behavior when the UUIDv7 counter overflows (> 4095 UUIDs in the same millisecond).
+/// Behavior when the UUIDv7 counter overflows (> 4095 UUIDs in the same logical millisecond).
 /// </summary>
+/// <remarks>
+/// The logical millisecond can be ahead of physical time after wall-clock rollback or restart-state restoration.
+/// </remarks>
 public enum CounterOverflowBehavior
 {
     /// <summary>
-    /// Spin-wait until the next millisecond.
+    /// Spin-wait until physical time passes the exhausted logical millisecond.
     /// Maintains strict time accuracy but may block.
     /// Best for: Testing, simulation, low-throughput production.
     /// </summary>
