@@ -10,6 +10,8 @@ This page mirrors the repository root `CHANGELOG.md`.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-05-16
+
 ### Fixed
 - Canonicalize explicit zero-counter `VectorClock` entries away during parse/read paths so structural equality matches vector-clock semantics for missing entries.
 

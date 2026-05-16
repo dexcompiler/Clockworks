@@ -7,6 +7,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-05-16
+
 ### Fixed
 - Canonicalize explicit zero-counter `VectorClock` entries away during parse/read paths so structural equality matches vector-clock semantics for missing entries.
 
@@ -83,7 +85,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 ### Build
 - Centralized common build properties in `Directory.Build.props`.
 
-[Unreleased]: https://github.com/dexcompiler/Clockworks/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/dexcompiler/Clockworks/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/dexcompiler/Clockworks/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/dexcompiler/Clockworks/releases/tag/v1.3.1
 [1.3.0]: https://github.com/dexcompiler/Clockworks/releases/tag/v1.3.0
 [1.2.0]: https://github.com/dexcompiler/Clockworks/releases/tag/v1.2.0
