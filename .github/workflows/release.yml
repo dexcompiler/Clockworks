@@ -12,6 +12,7 @@ on:
         type: string
 
 permissions:
+  actions: write
   contents: write
 
 concurrency:
@@ -110,3 +111,47 @@ jobs:
           files: |
             artifacts/packages/*.nupkg
             artifacts/packages/*.snupkg
+
+      - name: Deploy docs for released version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          existing_runs="$(gh run list \
+            --workflow Docs \
+            --event workflow_dispatch \
+            --branch main \
+            --json databaseId \
+            --jq '.[].databaseId' \
+            --limit 10)"
+
+          gh workflow run docs.yml --ref main -f version="${{ steps.vars.outputs.tag }}"
+
+          docs_run_id=""
+          for _ in {1..12}; do
+            candidate_runs="$(gh run list \
+              --workflow Docs \
+              --event workflow_dispatch \
+              --branch main \
+              --json databaseId \
+              --jq '.[].databaseId' \
+              --limit 10)"
+
+            while IFS= read -r candidate_run_id; do
+              if [[ -n "$candidate_run_id" ]] && ! grep -qx "$candidate_run_id" <<< "$existing_runs"; then
+                docs_run_id="$candidate_run_id"
+                break
+              fi
+            done <<< "$candidate_runs"
+
+            [[ -n "$docs_run_id" ]] && break
+
+            sleep 5
+          done
+
+          if [[ -z "$docs_run_id" ]]; then
+            echo "Timed out waiting for dispatched docs workflow run."
+            exit 1
+          fi
+
+          gh run watch "$docs_run_id" --interval 10

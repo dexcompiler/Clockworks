@@ -8,6 +8,11 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Docs version label to deploy, such as v1.4.0. Leave empty for a non-deploying dev build."
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -39,24 +44,27 @@ jobs:
         working-directory: docs
         run: npm ci
 
-      - name: Resolve latest release version
+      - name: Resolve docs version
         id: resolve_version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # For deployment builds:
           # - On release events, use the event's tag name (source of truth for that deployment).
+          # - On workflow_dispatch with an explicit version, use that exact version.
           # - On main pushes, resolve the latest release tag from GitHub.
-          # For pull requests and workflow_dispatch, fall back to "dev" so preview builds still succeed.
+          # For pull requests and workflow_dispatch without a version, fall back to "dev" so preview builds still succeed.
           if [[ "${{ github.event_name }}" == "release" ]]; then
             VERSION="${{ github.event.release.tag_name }}"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.version }}" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
           elif [[ "${{ github.event_name }}" == "push" ]]; then
             VERSION=$(gh release view --repo "${{ github.repository }}" --json tagName -q '.tagName' 2>/dev/null || true)
           else
             VERSION="dev"
           fi
 
-          if [[ "${{ github.event_name }}" == "push" || "${{ github.event_name }}" == "release" ]]; then
+          if [[ "$VERSION" != "dev" ]]; then
             if [[ -z "$VERSION" ]]; then
               echo "ERROR: Could not resolve docs version." >&2
               exit 1
@@ -85,7 +93,7 @@ jobs:
 
   deploy:
     needs: build
-    if: github.ref == 'refs/heads/main' || github.event_name == 'release'
+    if: github.event_name == 'push' || github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.version != '')
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -94,4 +102,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
