@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Xunit;
 using Clockworks.Instrumentation;
 
@@ -414,5 +415,81 @@ public sealed class SimulatedTimeProviderTests
 
         tp.Advance(TimeSpan.FromSeconds(10));
         Assert.Equal(["first", "second"], fired);
+    }
+
+    [Theory]
+    [InlineData("disabled")]
+    [InlineData("far-future")]
+    public void Rescheduled_timers_do_not_accumulate_behind_a_live_periodic_timer(string firstSchedule)
+    {
+        var tp = SimulatedTimeProvider.FromEpoch();
+        using var heartbeat = tp.CreateTimer(static _ => { }, state: null, dueTime: TimeSpan.FromSeconds(1), period: TimeSpan.FromSeconds(1));
+
+        var payloads = ArmFireAndDispose(tp, 1_000, firstSchedule == "disabled" ? Timeout.InfiniteTimeSpan : TimeSpan.FromDays(1));
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        // At most the heartbeat and one armed timer are live at a time, so the queue never needs more than
+        // twice that, and no fired, disposed timer keeps its state reachable.
+        Assert.InRange(tp.Statistics.MaxQueueLength, 1, 4);
+        Assert.DoesNotContain(payloads, payload => payload.IsAlive);
+        GC.KeepAlive(heartbeat);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference[] ArmFireAndDispose(SimulatedTimeProvider tp, int count, TimeSpan firstDueTime)
+    {
+        var payloads = new WeakReference[count];
+        for (var i = 0; i < count; i++)
+        {
+            var payload = new byte[1024];
+            payloads[i] = new WeakReference(payload);
+            using var timer = tp.CreateTimer(static _ => { }, payload, firstDueTime, Timeout.InfiniteTimeSpan);
+            Assert.True(timer.Change(TimeSpan.FromSeconds(1), Timeout.InfiniteTimeSpan));
+            tp.Advance(TimeSpan.FromSeconds(1));
+        }
+
+        return payloads;
+    }
+
+    [Theory]
+    [InlineData("disposed")]
+    [InlineData("fired")]
+    public void A_finished_timer_releases_its_state_while_a_stale_entry_for_it_is_queued(string ending)
+    {
+        var tp = SimulatedTimeProvider.FromEpoch();
+        var live = new ITimer[4];
+        for (var i = 0; i < live.Length; i++)
+        {
+            live[i] = tp.CreateTimer(static _ => { }, state: null, dueTime: TimeSpan.FromHours(1), period: Timeout.InfiniteTimeSpan);
+        }
+
+        // Four live timers outnumber the one stale entry, and it is due after them, so the queue keeps it.
+        var payload = ArmAndFinish(tp, ending);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        Assert.False(payload.IsAlive);
+        GC.KeepAlive(live);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference ArmAndFinish(SimulatedTimeProvider tp, string ending)
+    {
+        var payload = new byte[1024];
+        var timer = tp.CreateTimer(static _ => { }, payload, TimeSpan.FromHours(2), Timeout.InfiniteTimeSpan);
+        if (ending == "disposed")
+        {
+            timer.Dispose();
+        }
+        else
+        {
+            Assert.True(timer.Change(TimeSpan.FromMilliseconds(1), Timeout.InfiniteTimeSpan));
+            tp.Advance(TimeSpan.FromMilliseconds(1));
+        }
+
+        return new WeakReference(payload);
     }
 }

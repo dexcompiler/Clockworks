@@ -195,7 +195,8 @@ let ``GetElapsedTime matches advanced time`` (advanceMs: uint16) =
 
 /// Reference model for the timer queue: each advance fires every live timer that is due, once, in (due, id) order;
 /// a periodic timer is rescheduled one period after the advanced-to time; a disposed timer, or a one-shot timer
-/// that has fired, refuses Change. A due of None never comes.
+/// that has fired, refuses Change. A due of None never comes. The queue never holds more than twice the most
+/// timers live at once, however many have been changed or disposed.
 type private ModelTimer = { Id: int; mutable Due: int64 option; mutable Period: int64; mutable Done: bool }
 
 /// Property: under any sequence of create, change, dispose and advance, timers fire as the reference model says
@@ -206,6 +207,7 @@ let ``Timers fire as a reference model says under change and dispose`` (ops: (by
     let model = ResizeArray<ModelTimer>()
     let fired = ResizeArray<int>()
     let mutable now = 0L
+    let mutable mostLive = 0
     let mutable agrees = true
 
     let dueOf (b: byte) = if b % 8uy = 7uy then None else Some (int64 (b % 50uy))
@@ -224,6 +226,7 @@ let ``Timers fire as a reference model says under change and dispose`` (ops: (by
             let due, period = dueOf a, periodOf b
             model.Add({ Id = id; Due = due |> Option.map ((+) now); Period = period; Done = false })
             timers.Add(timeProvider.CreateTimer((fun state -> fired.Add(unbox<int> state)), box id, dueSpan due, periodSpan period))
+            mostLive <- max mostLive (model |> Seq.filter (fun timer -> not timer.Done) |> Seq.length)
         | 1uy when model.Count > 0 ->
             let timer = model[int a % model.Count]
             let due, period = dueOf b, periodOf (a ^^^ b)
@@ -250,4 +253,4 @@ let ``Timers fire as a reference model says under change and dispose`` (ops: (by
             timeProvider.Advance(TimeSpan.FromMilliseconds(float by))
             agrees <- agrees && List.ofSeq fired = (due |> List.map (fun timer -> timer.Id))
 
-    agrees
+    agrees && timeProvider.Statistics.MaxQueueLength <= 2L * int64 mostLive
