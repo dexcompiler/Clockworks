@@ -187,27 +187,51 @@ public sealed class SimulatedTimeProvider : TimeProvider
 
         // Fire callbacks outside lock. A callback may dispose or reschedule a timer that this advance has already
         // found due; such a timer does not fire for this occurrence.
-        foreach (var (timer, version) in due)
+        var next = 0;
+        try
         {
-            TimerCallback? callback;
-            object? state;
-            lock (_gate)
+            for (; next < due.Count; next++)
             {
-                if (timer.IsDisposed || timer.Version != version)
+                var (timer, version) = due[next];
+                TimerCallback? callback;
+                object? state;
+                lock (_gate)
                 {
-                    continue;
+                    if (timer.IsDisposed || timer.Version != version)
+                    {
+                        continue;
+                    }
+
+                    callback = timer.Callback;
+                    state = timer.State;
+                    if (timer.PeriodTicks == 0)
+                    {
+                        timer.MarkDisposed();
+                    }
                 }
 
-                callback = timer.Callback;
-                state = timer.State;
-                if (timer.PeriodTicks == 0)
+                Statistics.RecordCallbackFired();
+                callback!(state);
+            }
+        }
+        finally
+        {
+            if (next < due.Count)
+            {
+                // A callback threw. The one-shot timers this advance found due and did not reach are spent, as they
+                // were when Advance marked them on collection; periodic ones keep their next occurrence.
+                lock (_gate)
                 {
-                    timer.MarkDisposed();
+                    for (var i = next + 1; i < due.Count; i++)
+                    {
+                        var (timer, version) = due[i];
+                        if (timer.PeriodTicks == 0 && !timer.IsDisposed && timer.Version == version)
+                        {
+                            timer.MarkDisposed();
+                        }
+                    }
                 }
             }
-
-            Statistics.RecordCallbackFired();
-            callback!(state);
         }
     }
 
@@ -422,8 +446,8 @@ public sealed class SimulatedTimeProvider : TimeProvider
             return ValueTask.CompletedTask;
         }
 
-        // A one-shot timer that has fired is spent. Callers hold the owner's lock; the timer's entry is already out
-        // of the queue.
+        // A one-shot timer that has fired, or been passed over by a throwing callback, is spent. Callers hold the
+        // owner's lock; the timer's entry is already out of the queue.
         internal void MarkDisposed()
         {
             if (Interlocked.Exchange(ref _disposed, 1) == 0)

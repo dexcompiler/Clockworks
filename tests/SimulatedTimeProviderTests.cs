@@ -492,4 +492,24 @@ public sealed class SimulatedTimeProviderTests
 
         return new WeakReference(payload);
     }
+
+    [Fact]
+    public void A_throwing_callback_leaves_the_other_due_one_shot_timers_of_its_advance_spent()
+    {
+        var tp = SimulatedTimeProvider.FromEpoch();
+        var fired = new List<string>();
+
+        using var throwing = tp.CreateTimer(static _ => throw new InvalidOperationException("callback failed"), state: null, dueTime: TimeSpan.FromSeconds(1), period: Timeout.InfiniteTimeSpan);
+        using var later = tp.CreateTimer(_ => fired.Add("later"), state: null, dueTime: TimeSpan.FromSeconds(2), period: Timeout.InfiniteTimeSpan);
+        using var periodic = tp.CreateTimer(_ => fired.Add("periodic"), state: null, dueTime: TimeSpan.FromSeconds(2), period: TimeSpan.FromSeconds(5));
+
+        Assert.Throws<InvalidOperationException>(() => tp.Advance(TimeSpan.FromSeconds(2)));
+
+        // As in 1.4.0, a one-shot timer this advance found due is spent even though the exception kept its
+        // callback from running: it cannot be rescheduled and never fires. A periodic timer keeps its next
+        // occurrence.
+        Assert.False(later.Change(TimeSpan.FromSeconds(1), Timeout.InfiniteTimeSpan));
+        tp.Advance(TimeSpan.FromSeconds(5));
+        Assert.Equal(["periodic"], fired);
+    }
 }
