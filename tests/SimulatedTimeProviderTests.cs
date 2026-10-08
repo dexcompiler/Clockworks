@@ -323,4 +323,96 @@ public sealed class SimulatedTimeProviderTests
         tp.Advance(TimeSpan.Zero);
         Assert.Equal([1, 2], list);
     }
+
+    [Fact]
+    public void Changing_the_earliest_timer_later_does_not_hide_a_due_timer()
+    {
+        var tp = SimulatedTimeProvider.FromEpoch();
+        var fired = new List<string>();
+
+        using var a = tp.CreateTimer(_ => fired.Add("a"), state: null, dueTime: TimeSpan.FromSeconds(10), period: Timeout.InfiniteTimeSpan);
+        using var b = tp.CreateTimer(_ => fired.Add("b"), state: null, dueTime: TimeSpan.FromSeconds(20), period: Timeout.InfiniteTimeSpan);
+
+        Assert.True(a.Change(TimeSpan.FromSeconds(25), Timeout.InfiniteTimeSpan));
+
+        tp.Advance(TimeSpan.FromSeconds(20));
+        Assert.Equal(["b"], fired);
+
+        tp.Advance(TimeSpan.FromSeconds(5));
+        Assert.Equal(["b", "a"], fired);
+    }
+
+    [Fact]
+    public void Stopping_the_earliest_timer_does_not_block_later_timers()
+    {
+        var tp = SimulatedTimeProvider.FromEpoch();
+        var fired = new List<string>();
+
+        using var a = tp.CreateTimer(_ => fired.Add("a"), state: null, dueTime: TimeSpan.FromSeconds(10), period: Timeout.InfiniteTimeSpan);
+        using var b = tp.CreateTimer(_ => fired.Add("b"), state: null, dueTime: TimeSpan.FromSeconds(20), period: Timeout.InfiniteTimeSpan);
+
+        Assert.True(a.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan));
+
+        tp.Advance(TimeSpan.FromDays(1));
+        Assert.Equal(["b"], fired);
+    }
+
+    [Fact]
+    public void CancelAfter_on_a_provider_source_does_not_hide_a_due_delay()
+    {
+        var tp = SimulatedTimeProvider.FromEpoch();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1), tp);
+        var delay = Task.Delay(TimeSpan.FromSeconds(2), tp);
+
+        // CancelAfter reschedules the source's timer through ITimer.Change.
+        cts.CancelAfter(TimeSpan.FromSeconds(5));
+
+        tp.Advance(TimeSpan.FromSeconds(3));
+        Assert.True(delay.IsCompletedSuccessfully);
+        Assert.False(cts.IsCancellationRequested);
+
+        tp.Advance(TimeSpan.FromSeconds(2));
+        Assert.True(cts.IsCancellationRequested);
+    }
+
+    [Fact]
+    public void Timer_disposed_by_an_earlier_callback_in_the_same_advance_does_not_fire()
+    {
+        var tp = SimulatedTimeProvider.FromEpoch();
+        var fired = new List<string>();
+
+        ITimer? second = null;
+        using var first = tp.CreateTimer(_ =>
+        {
+            fired.Add("first");
+            second!.Dispose();
+        }, state: null, dueTime: TimeSpan.FromSeconds(1), period: Timeout.InfiniteTimeSpan);
+        second = tp.CreateTimer(_ => fired.Add("second"), state: null, dueTime: TimeSpan.FromSeconds(2), period: Timeout.InfiniteTimeSpan);
+
+        tp.Advance(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(["first"], fired);
+    }
+
+    [Fact]
+    public void Timer_rescheduled_by_an_earlier_callback_in_the_same_advance_fires_at_its_new_due_time()
+    {
+        var tp = SimulatedTimeProvider.FromEpoch();
+        var fired = new List<string>();
+
+        ITimer? second = null;
+        using var first = tp.CreateTimer(_ =>
+        {
+            fired.Add("first");
+            Assert.True(second!.Change(TimeSpan.FromSeconds(10), Timeout.InfiniteTimeSpan));
+        }, state: null, dueTime: TimeSpan.FromSeconds(1), period: Timeout.InfiniteTimeSpan);
+        using var secondTimer = second = tp.CreateTimer(_ => fired.Add("second"), state: null, dueTime: TimeSpan.FromSeconds(2), period: Timeout.InfiniteTimeSpan);
+
+        tp.Advance(TimeSpan.FromSeconds(2));
+        Assert.Equal(["first"], fired);
+
+        tp.Advance(TimeSpan.FromSeconds(10));
+        Assert.Equal(["first", "second"], fired);
+    }
 }
