@@ -192,3 +192,62 @@ let ``GetElapsedTime matches advanced time`` (advanceMs: uint16) =
     
     // Allow small rounding differences
     abs (elapsed.TotalMilliseconds - expectedElapsed.TotalMilliseconds) < 0.01
+
+/// Reference model for the timer queue: each advance fires every live timer that is due, once, in (due, id) order;
+/// a periodic timer is rescheduled one period after the advanced-to time; a disposed timer, or a one-shot timer
+/// that has fired, refuses Change. A due of None never comes.
+type private ModelTimer = { Id: int; mutable Due: int64 option; mutable Period: int64; mutable Done: bool }
+
+/// Property: under any sequence of create, change, dispose and advance, timers fire as the reference model says
+[<Property(MaxTest = 500)>]
+let ``Timers fire as a reference model says under change and dispose`` (ops: (byte * byte * byte) list) =
+    let timeProvider = new SimulatedTimeProvider()
+    let timers = ResizeArray<System.Threading.ITimer>()
+    let model = ResizeArray<ModelTimer>()
+    let fired = ResizeArray<int>()
+    let mutable now = 0L
+    let mutable agrees = true
+
+    let dueOf (b: byte) = if b % 8uy = 7uy then None else Some (int64 (b % 50uy))
+    let periodOf (b: byte) = if b % 3uy = 0uy then int64 (b % 20uy) + 1L else 0L
+    let dueSpan due =
+        match due with
+        | Some ms -> TimeSpan.FromMilliseconds(float ms)
+        | None -> System.Threading.Timeout.InfiniteTimeSpan
+    let periodSpan period =
+        if period = 0L then System.Threading.Timeout.InfiniteTimeSpan else TimeSpan.FromMilliseconds(float period)
+
+    for (kind, a, b) in List.truncate 60 ops do
+        match kind % 4uy with
+        | 0uy ->
+            let id = model.Count
+            let due, period = dueOf a, periodOf b
+            model.Add({ Id = id; Due = due |> Option.map ((+) now); Period = period; Done = false })
+            timers.Add(timeProvider.CreateTimer((fun state -> fired.Add(unbox<int> state)), box id, dueSpan due, periodSpan period))
+        | 1uy when model.Count > 0 ->
+            let timer = model[int a % model.Count]
+            let due, period = dueOf b, periodOf (a ^^^ b)
+            let expected = not timer.Done
+            if expected then
+                timer.Due <- due |> Option.map ((+) now)
+                timer.Period <- period
+            agrees <- agrees && timers[timer.Id].Change(dueSpan due, periodSpan period) = expected
+        | 2uy when model.Count > 0 ->
+            let timer = model[int a % model.Count]
+            timer.Done <- true
+            timers[timer.Id].Dispose()
+        | _ ->
+            let by = int64 (a % 30uy)
+            now <- now + by
+            let due =
+                model
+                |> Seq.filter (fun timer -> not timer.Done && timer.Due |> Option.exists (fun d -> d <= now))
+                |> Seq.sortBy (fun timer -> timer.Due.Value, timer.Id)
+                |> Seq.toList
+            for timer in due do
+                if timer.Period > 0L then timer.Due <- Some (now + timer.Period) else timer.Done <- true
+            fired.Clear()
+            timeProvider.Advance(TimeSpan.FromMilliseconds(float by))
+            agrees <- agrees && List.ofSeq fired = (due |> List.map (fun timer -> timer.Id))
+
+    agrees
