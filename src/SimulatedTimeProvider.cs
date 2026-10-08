@@ -20,7 +20,15 @@ public sealed class SimulatedTimeProvider : TimeProvider
     private long _schedulerTicks;
 
     private long _nextId;
-    private readonly PriorityQueue<ScheduledTimer, ScheduledTimer> _queue;
+
+    // Each entry carries the timer's schedule version and an immutable (due, id) priority, so the heap order always
+    // holds. Change supersedes a timer's entry and Dispose abandons it, leaving the stale entry in place: Advance
+    // discards stale entries that reach the head, and the queue is rebuilt from live entries whenever stale ones
+    // outnumber them, so it never holds more than about twice the live timers.
+    private readonly PriorityQueue<(ScheduledTimer Timer, long Version), (long DueAtTicks, long Id)> _queue;
+
+    // Timers whose current entry is in the queue; every other queued entry is stale.
+    private int _queued;
 
     /// <summary>
     /// Gets lightweight counters that can be used to observe scheduling behavior during simulation.
@@ -38,7 +46,7 @@ public sealed class SimulatedTimeProvider : TimeProvider
         _localTimeZone = localTimeZone ?? TimeZoneInfo.Utc;
 
         _schedulerTicks = 0;
-        _queue = new PriorityQueue<ScheduledTimer, ScheduledTimer>(new ScheduledTimerComparer());
+        _queue = new PriorityQueue<(ScheduledTimer Timer, long Version), (long DueAtTicks, long Id)>();
     }
 
     /// <summary>
@@ -135,48 +143,41 @@ public sealed class SimulatedTimeProvider : TimeProvider
 
         Statistics.RecordAdvance(by);
 
-        List<(TimerCallback Callback, object? State)>? due = null;
+        List<(ScheduledTimer Timer, long Version)>? due = null;
 
         lock (_gate)
         {
             _utcNow = _utcNow.Add(by);
             _schedulerTicks += by.Ticks;
 
-            while (_queue.TryPeek(out var timer, out _))
+            while (_queue.TryPeek(out var entry, out var priority))
             {
-                if (timer.IsDisposed)
+                if (IsStale(entry))
                 {
                     _queue.Dequeue();
                     continue;
                 }
 
-                if (timer.DueAtTicks > _schedulerTicks)
+                if (priority.DueAtTicks > _schedulerTicks)
                 {
                     break;
                 }
 
                 _queue.Dequeue();
-
-                if (timer.IsDisposed)
-                {
-                    continue;
-                }
-
+                Unqueue(entry.Timer);
                 due ??= [];
-                due.Add((timer.Callback, timer.State));
+                due.Add(entry);
 
                 // Periodic timers: coalesce on jump; schedule next occurrence from "now".
-                if (timer.PeriodTicks > 0)
+                if (entry.Timer.PeriodTicks > 0)
                 {
-                    timer.DueAtTicks = _schedulerTicks + timer.PeriodTicks;
-                    _queue.Enqueue(timer, timer);
+                    entry.Timer.DueAtTicks = _schedulerTicks + entry.Timer.PeriodTicks;
+                    Enqueue(entry.Timer);
                     Statistics.RecordPeriodicReschedule(_queue.Count);
                 }
-                else
-                {
-                    timer.MarkDisposed();
-                }
             }
+
+            CompactIfMostlyStale();
         }
 
         if (due is null)
@@ -184,11 +185,53 @@ public sealed class SimulatedTimeProvider : TimeProvider
             return;
         }
 
-        // Fire callbacks outside lock.
-        foreach (var (callback, state) in due)
+        // Fire callbacks outside lock. A callback may dispose or reschedule a timer that this advance has already
+        // found due; such a timer does not fire for this occurrence.
+        var next = 0;
+        try
         {
-            Statistics.RecordCallbackFired();
-            callback(state);
+            for (; next < due.Count; next++)
+            {
+                var (timer, version) = due[next];
+                TimerCallback? callback;
+                object? state;
+                lock (_gate)
+                {
+                    if (timer.IsDisposed || timer.Version != version)
+                    {
+                        continue;
+                    }
+
+                    callback = timer.Callback;
+                    state = timer.State;
+                    if (timer.PeriodTicks == 0)
+                    {
+                        timer.MarkDisposed();
+                    }
+                }
+
+                Statistics.RecordCallbackFired();
+                callback!(state);
+            }
+        }
+        finally
+        {
+            if (next < due.Count)
+            {
+                // A callback threw. The one-shot timers this advance found due and did not reach are spent, as they
+                // were when Advance marked them on collection; periodic ones keep their next occurrence.
+                lock (_gate)
+                {
+                    for (var i = next + 1; i < due.Count; i++)
+                    {
+                        var (timer, version) = due[i];
+                        if (timer.PeriodTicks == 0 && !timer.IsDisposed && timer.Version == version)
+                        {
+                            timer.MarkDisposed();
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -221,35 +264,54 @@ public sealed class SimulatedTimeProvider : TimeProvider
             var periodTicks = period == Timeout.InfiniteTimeSpan ? 0 : period.Ticks;
 
             var timer = new ScheduledTimer(this, id, callback, state, dueTicks, periodTicks);
-            _queue.Enqueue(timer, timer);
+            Enqueue(timer);
             Statistics.RecordTimerCreated(_queue.Count);
             return timer;
         }
     }
 
-    private void Reschedule(ScheduledTimer timer)
+    // Queues the timer's current schedule. Callers hold _gate.
+    private void Enqueue(ScheduledTimer timer)
     {
-        if (timer.IsDisposed)
+        _queue.Enqueue((timer, timer.Version), (timer.DueAtTicks, timer.Id));
+        timer.Queued = true;
+        _queued++;
+    }
+
+    // The timer's queued entry has been dequeued, superseded or abandoned. Callers hold _gate.
+    private void Unqueue(ScheduledTimer timer)
+    {
+        if (timer.Queued)
+        {
+            timer.Queued = false;
+            _queued--;
+        }
+    }
+
+    // An entry is current only while its timer is queued at the entry's version. Callers hold _gate.
+    private static bool IsStale((ScheduledTimer Timer, long Version) entry) =>
+        !entry.Timer.Queued || entry.Version != entry.Timer.Version;
+
+    // Rebuilds the queue from its current entries once stale ones outnumber them, in O(n): each stale entry is
+    // dropped once, so the rebuilds cost O(1) per change or disposal amortized. Callers hold _gate.
+    private void CompactIfMostlyStale()
+    {
+        if (_queue.Count - _queued <= _queued)
         {
             return;
         }
 
-        _queue.Enqueue(timer, timer);
-        Statistics.RecordQueueEnqueue(_queue.Count);
-    }
-
-    private sealed class ScheduledTimerComparer : IComparer<ScheduledTimer>
-    {
-        public int Compare(ScheduledTimer? x, ScheduledTimer? y)
+        var current = new List<((ScheduledTimer Timer, long Version) Entry, (long DueAtTicks, long Id) Priority)>(_queued);
+        foreach (var item in _queue.UnorderedItems)
         {
-            if (ReferenceEquals(x, y)) return 0;
-            if (x is null) return -1;
-            if (y is null) return 1;
-
-            var cmp = x.DueAtTicks.CompareTo(y.DueAtTicks);
-            if (cmp != 0) return cmp;
-            return x.Id.CompareTo(y.Id);
+            if (!IsStale(item.Element))
+            {
+                current.Add(item);
+            }
         }
+
+        _queue.Clear();
+        _queue.EnqueueRange(current);
     }
 
     private sealed class ScheduledTimer : ITimer
@@ -278,13 +340,19 @@ public sealed class SimulatedTimeProvider : TimeProvider
         /// </summary>
         public long Id { get; }
         /// <summary>
-        /// Gets the delegate to invoke when the timer fires.
+        /// Gets the delegate to invoke when the timer fires, or null once the timer is disposed or spent.
         /// </summary>
-        public TimerCallback Callback { get; }
+        public TimerCallback? Callback { get; private set; }
         /// <summary>
-        /// Gets the state object passed to the timer callback.
+        /// Gets the state object passed to the timer callback, released with <see cref="Callback"/>.
         /// </summary>
-        public object? State { get; }
+        public object? State { get; private set; }
+
+        /// <summary>
+        /// Gets or sets whether the timer's current entry is in the owner's queue. Read and written under the
+        /// owner's lock.
+        /// </summary>
+        public bool Queued { get; set; }
 
         /// <summary>
         /// Gets or sets the due time of the timer, in scheduler ticks.
@@ -294,6 +362,12 @@ public sealed class SimulatedTimeProvider : TimeProvider
         /// Gets or sets the period of the timer, in scheduler ticks.
         /// </summary>
         public long PeriodTicks { get; set; }
+
+        /// <summary>
+        /// Gets the version of the timer's schedule, which <see cref="Change"/> increments. A queued entry with an
+        /// older version is stale. Read and written under the owner's lock.
+        /// </summary>
+        public long Version { get; private set; }
 
         /// <summary>
         /// Gets a value indicating whether this timer has been disposed.
@@ -332,8 +406,13 @@ public sealed class SimulatedTimeProvider : TimeProvider
                 DueAtTicks = dueTicks;
                 PeriodTicks = period == Timeout.InfiniteTimeSpan ? 0 : period.Ticks;
 
+                // Never reorder a queued entry: supersede it, and queue the new schedule.
+                _owner.Unqueue(this);
+                Version++;
                 _owner.Statistics.RecordTimerChange();
-                _owner.Reschedule(this);
+                _owner.CompactIfMostlyStale();
+                _owner.Enqueue(this);
+                _owner.Statistics.RecordQueueEnqueue(_owner._queue.Count);
                 return true;
             }
         }
@@ -343,10 +422,19 @@ public sealed class SimulatedTimeProvider : TimeProvider
         /// </summary>
         public void Dispose()
         {
-            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+            lock (_owner._gate)
             {
-                _owner.Statistics.RecordTimerDisposed();
+                if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                {
+                    return;
+                }
+
+                Release();
+                _owner.Unqueue(this);
+                _owner.CompactIfMostlyStale();
             }
+
+            _owner.Statistics.RecordTimerDisposed();
         }
 
         /// <summary>
@@ -358,12 +446,22 @@ public sealed class SimulatedTimeProvider : TimeProvider
             return ValueTask.CompletedTask;
         }
 
+        // A one-shot timer that has fired, or been passed over by a throwing callback, is spent. Callers hold the
+        // owner's lock; the timer's entry is already out of the queue.
         internal void MarkDisposed()
         {
             if (Interlocked.Exchange(ref _disposed, 1) == 0)
             {
+                Release();
                 _owner.Statistics.RecordTimerDisposed();
             }
+        }
+
+        // A disposed or spent timer drops its callback and state, so an entry still queued for it pins neither.
+        private void Release()
+        {
+            Callback = null;
+            State = null;
         }
     }
 }

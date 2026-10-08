@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Xunit;
 using Clockworks.Instrumentation;
 
@@ -322,5 +323,193 @@ public sealed class SimulatedTimeProviderTests
 
         tp.Advance(TimeSpan.Zero);
         Assert.Equal([1, 2], list);
+    }
+
+    [Fact]
+    public void Changing_the_earliest_timer_later_does_not_hide_a_due_timer()
+    {
+        var tp = SimulatedTimeProvider.FromEpoch();
+        var fired = new List<string>();
+
+        using var a = tp.CreateTimer(_ => fired.Add("a"), state: null, dueTime: TimeSpan.FromSeconds(10), period: Timeout.InfiniteTimeSpan);
+        using var b = tp.CreateTimer(_ => fired.Add("b"), state: null, dueTime: TimeSpan.FromSeconds(20), period: Timeout.InfiniteTimeSpan);
+
+        Assert.True(a.Change(TimeSpan.FromSeconds(25), Timeout.InfiniteTimeSpan));
+
+        tp.Advance(TimeSpan.FromSeconds(20));
+        Assert.Equal(["b"], fired);
+
+        tp.Advance(TimeSpan.FromSeconds(5));
+        Assert.Equal(["b", "a"], fired);
+    }
+
+    [Fact]
+    public void Stopping_the_earliest_timer_does_not_block_later_timers()
+    {
+        var tp = SimulatedTimeProvider.FromEpoch();
+        var fired = new List<string>();
+
+        using var a = tp.CreateTimer(_ => fired.Add("a"), state: null, dueTime: TimeSpan.FromSeconds(10), period: Timeout.InfiniteTimeSpan);
+        using var b = tp.CreateTimer(_ => fired.Add("b"), state: null, dueTime: TimeSpan.FromSeconds(20), period: Timeout.InfiniteTimeSpan);
+
+        Assert.True(a.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan));
+
+        tp.Advance(TimeSpan.FromDays(1));
+        Assert.Equal(["b"], fired);
+    }
+
+    [Fact]
+    public void CancelAfter_on_a_provider_source_does_not_hide_a_due_delay()
+    {
+        var tp = SimulatedTimeProvider.FromEpoch();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1), tp);
+        var delay = Task.Delay(TimeSpan.FromSeconds(2), tp);
+
+        // CancelAfter reschedules the source's timer through ITimer.Change.
+        cts.CancelAfter(TimeSpan.FromSeconds(5));
+
+        tp.Advance(TimeSpan.FromSeconds(3));
+        Assert.True(delay.IsCompletedSuccessfully);
+        Assert.False(cts.IsCancellationRequested);
+
+        tp.Advance(TimeSpan.FromSeconds(2));
+        Assert.True(cts.IsCancellationRequested);
+    }
+
+    [Fact]
+    public void Timer_disposed_by_an_earlier_callback_in_the_same_advance_does_not_fire()
+    {
+        var tp = SimulatedTimeProvider.FromEpoch();
+        var fired = new List<string>();
+
+        ITimer? second = null;
+        using var first = tp.CreateTimer(_ =>
+        {
+            fired.Add("first");
+            second!.Dispose();
+        }, state: null, dueTime: TimeSpan.FromSeconds(1), period: Timeout.InfiniteTimeSpan);
+        second = tp.CreateTimer(_ => fired.Add("second"), state: null, dueTime: TimeSpan.FromSeconds(2), period: Timeout.InfiniteTimeSpan);
+
+        tp.Advance(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(["first"], fired);
+    }
+
+    [Fact]
+    public void Timer_rescheduled_by_an_earlier_callback_in_the_same_advance_fires_at_its_new_due_time()
+    {
+        var tp = SimulatedTimeProvider.FromEpoch();
+        var fired = new List<string>();
+
+        ITimer? second = null;
+        using var first = tp.CreateTimer(_ =>
+        {
+            fired.Add("first");
+            Assert.True(second!.Change(TimeSpan.FromSeconds(10), Timeout.InfiniteTimeSpan));
+        }, state: null, dueTime: TimeSpan.FromSeconds(1), period: Timeout.InfiniteTimeSpan);
+        using var secondTimer = second = tp.CreateTimer(_ => fired.Add("second"), state: null, dueTime: TimeSpan.FromSeconds(2), period: Timeout.InfiniteTimeSpan);
+
+        tp.Advance(TimeSpan.FromSeconds(2));
+        Assert.Equal(["first"], fired);
+
+        tp.Advance(TimeSpan.FromSeconds(10));
+        Assert.Equal(["first", "second"], fired);
+    }
+
+    [Theory]
+    [InlineData("disabled")]
+    [InlineData("far-future")]
+    public void Rescheduled_timers_do_not_accumulate_behind_a_live_periodic_timer(string firstSchedule)
+    {
+        var tp = SimulatedTimeProvider.FromEpoch();
+        using var heartbeat = tp.CreateTimer(static _ => { }, state: null, dueTime: TimeSpan.FromSeconds(1), period: TimeSpan.FromSeconds(1));
+
+        var payloads = ArmFireAndDispose(tp, 1_000, firstSchedule == "disabled" ? Timeout.InfiniteTimeSpan : TimeSpan.FromDays(1));
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        // At most the heartbeat and one armed timer are live at a time, so the queue never needs more than
+        // twice that, and no fired, disposed timer keeps its state reachable.
+        Assert.InRange(tp.Statistics.MaxQueueLength, 1, 4);
+        Assert.DoesNotContain(payloads, payload => payload.IsAlive);
+        GC.KeepAlive(heartbeat);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference[] ArmFireAndDispose(SimulatedTimeProvider tp, int count, TimeSpan firstDueTime)
+    {
+        var payloads = new WeakReference[count];
+        for (var i = 0; i < count; i++)
+        {
+            var payload = new byte[1024];
+            payloads[i] = new WeakReference(payload);
+            using var timer = tp.CreateTimer(static _ => { }, payload, firstDueTime, Timeout.InfiniteTimeSpan);
+            Assert.True(timer.Change(TimeSpan.FromSeconds(1), Timeout.InfiniteTimeSpan));
+            tp.Advance(TimeSpan.FromSeconds(1));
+        }
+
+        return payloads;
+    }
+
+    [Theory]
+    [InlineData("disposed")]
+    [InlineData("fired")]
+    public void A_finished_timer_releases_its_state_while_a_stale_entry_for_it_is_queued(string ending)
+    {
+        var tp = SimulatedTimeProvider.FromEpoch();
+        var live = new ITimer[4];
+        for (var i = 0; i < live.Length; i++)
+        {
+            live[i] = tp.CreateTimer(static _ => { }, state: null, dueTime: TimeSpan.FromHours(1), period: Timeout.InfiniteTimeSpan);
+        }
+
+        // Four live timers outnumber the one stale entry, and it is due after them, so the queue keeps it.
+        var payload = ArmAndFinish(tp, ending);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        Assert.False(payload.IsAlive);
+        GC.KeepAlive(live);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference ArmAndFinish(SimulatedTimeProvider tp, string ending)
+    {
+        var payload = new byte[1024];
+        var timer = tp.CreateTimer(static _ => { }, payload, TimeSpan.FromHours(2), Timeout.InfiniteTimeSpan);
+        if (ending == "disposed")
+        {
+            timer.Dispose();
+        }
+        else
+        {
+            Assert.True(timer.Change(TimeSpan.FromMilliseconds(1), Timeout.InfiniteTimeSpan));
+            tp.Advance(TimeSpan.FromMilliseconds(1));
+        }
+
+        return new WeakReference(payload);
+    }
+
+    [Fact]
+    public void A_throwing_callback_leaves_the_other_due_one_shot_timers_of_its_advance_spent()
+    {
+        var tp = SimulatedTimeProvider.FromEpoch();
+        var fired = new List<string>();
+
+        using var throwing = tp.CreateTimer(static _ => throw new InvalidOperationException("callback failed"), state: null, dueTime: TimeSpan.FromSeconds(1), period: Timeout.InfiniteTimeSpan);
+        using var later = tp.CreateTimer(_ => fired.Add("later"), state: null, dueTime: TimeSpan.FromSeconds(2), period: Timeout.InfiniteTimeSpan);
+        using var periodic = tp.CreateTimer(_ => fired.Add("periodic"), state: null, dueTime: TimeSpan.FromSeconds(2), period: TimeSpan.FromSeconds(5));
+
+        Assert.Throws<InvalidOperationException>(() => tp.Advance(TimeSpan.FromSeconds(2)));
+
+        // As in 1.4.0, a one-shot timer this advance found due is spent even though the exception kept its
+        // callback from running: it cannot be rescheduled and never fires. A periodic timer keeps its next
+        // occurrence.
+        Assert.False(later.Change(TimeSpan.FromSeconds(1), Timeout.InfiniteTimeSpan));
+        tp.Advance(TimeSpan.FromSeconds(5));
+        Assert.Equal(["periodic"], fired);
     }
 }

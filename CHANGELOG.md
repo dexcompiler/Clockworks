@@ -7,6 +7,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Fixed
+- `SimulatedTimeProvider`: rescheduling a queued timer with `ITimer.Change` no longer corrupts the timer queue. Moving the earliest timer later, or stopping it with `Infinite`, hid every other due timer from `Advance` until that timer was reached, so `CancellationTokenSource.CancelAfter`, `TryReset` and `PeriodicTimer.Period` on a provider-made timer could stall unrelated delays and timeouts. Queue entries now carry an immutable `(due, id)` priority and a schedule version, and stale entries are discarded.
+- `SimulatedTimeProvider`: a timer disposed or rescheduled by an earlier callback of the same `Advance` no longer fires for that occurrence. A one-shot timer is spent when its callback runs rather than when `Advance` finds it due. If a callback throws, the one-shot timers that `Advance` found due and did not reach are spent, as before.
+- `SimulatedTimeProvider`: disposed timers and superseded schedules no longer accumulate in the timer queue behind a long-lived timer. The queue is rebuilt from its live entries whenever stale ones outnumber them, so it holds at most about twice the live timers, and a disposed or spent timer releases its callback and state.
+
 ## [1.4.0] - 2026-05-16
 
 ### Fixed
