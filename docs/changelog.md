@@ -10,6 +10,17 @@ This page mirrors the repository root `CHANGELOG.md`.
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-10-14
+
+### Fixed
+- `SimulatedTimeProvider`: rescheduling a queued timer with `ITimer.Change` no longer corrupts the timer queue. Moving the earliest timer later, or stopping it with `Infinite`, hid every other due timer from `Advance` until that timer was reached, so `CancellationTokenSource.CancelAfter`, `TryReset` and `PeriodicTimer.Period` on a provider-made timer could stall unrelated delays and timeouts. Queue entries now carry an immutable `(due, id)` priority and a schedule version, and stale entries are discarded.
+- `SimulatedTimeProvider`: a timer disposed or rescheduled by an earlier callback of the same `Advance` no longer fires for that occurrence. A one-shot timer is spent when its callback runs rather than when `Advance` finds it due. If a callback throws, the one-shot timers that `Advance` found due and did not reach are spent, as before.
+- `SimulatedTimeProvider`: disposed timers and superseded schedules no longer accumulate in the timer queue behind a long-lived timer. The queue is rebuilt from its live entries whenever stale ones outnumber them, so it holds at most about twice the live timers, and a disposed or spent timer releases its callback and state.
+
+### Security
+- Update the private SourceLink build dependency to `Microsoft.SourceLink.GitHub` 10.0.113, resolving the `Microsoft.Build.Tasks.Git` information-disclosure advisory [GHSA-23fw-v26w-5fgq](https://github.com/advisories/GHSA-23fw-v26w-5fgq). Build tooling remains excluded from package consumer dependencies.
+- Update the integration demo to `Microsoft.Data.Sqlite` 9.0.21, resolving the native SQLite advisory [GHSA-2m69-gcr7-jv3q](https://github.com/advisories/GHSA-2m69-gcr7-jv3q) through SQLitePCLRaw 2.1.13. SQLite remains a demo-only dependency.
+
 ## [1.4.0] - 2026-05-16
 
 ### Fixed
@@ -87,3 +98,10 @@ This page mirrors the repository root `CHANGELOG.md`.
 
 ### Build
 - Centralized common build properties in `Directory.Build.props`.
+
+[Unreleased]: https://github.com/dexcompiler/Clockworks/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/dexcompiler/Clockworks/compare/v1.4.0...v1.4.1
+[1.4.0]: https://github.com/dexcompiler/Clockworks/compare/v1.3.1...v1.4.0
+[1.3.1]: https://github.com/dexcompiler/Clockworks/releases/tag/v1.3.1
+[1.3.0]: https://github.com/dexcompiler/Clockworks/releases/tag/v1.3.0
+[1.2.0]: https://github.com/dexcompiler/Clockworks/releases/tag/v1.2.0
